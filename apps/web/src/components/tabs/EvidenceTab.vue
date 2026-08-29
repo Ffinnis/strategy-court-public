@@ -12,7 +12,11 @@ const store = useCourtStore();
 const selectedFailure = ref<FailureEvidence | null>(null);
 const selectedTrade = ref<Trade | null>(null);
 const dialog = ref<HTMLElement | null>(null);
+const failureRetryButton = ref<HTMLButtonElement | null>(null);
+const failureDetailLoading = ref(false);
+const failureInspectionFailed = ref(false);
 let previousFocus: HTMLElement | null = null;
+let failureInspectionRequest = 0;
 const tradeFilter = ref("All");
 const signalStatusFilter = ref("All");
 const signalSymbolFilter = ref("All");
@@ -35,6 +39,7 @@ const displayFailures = computed(() => {
 });
 const formatMoney = (value: number) => `${value >= 0 ? "+" : "−"}$${Math.abs(value).toFixed(2)}`;
 const formatQuantity = (value: number) => value.toLocaleString(undefined, { maximumFractionDigits: 2 });
+const isReported = (value: string | undefined) => Boolean(value && value.trim().toLowerCase() !== "not reported");
 const assumption = (key: string) => Object.entries(store.result?.assumptions ?? {}).find(([label]) => label.toLowerCase().includes(key.toLowerCase()))?.[1] ?? "Not reported";
 const label = (value: string) => value.replaceAll(/[._-]+/g, " ").replace(/^./, (letter) => letter.toUpperCase());
 const failureCosts = computed(() => Object.entries(selectedFailure.value?.costs ?? {}).map(([key, value]) => ({ label: label(key), value: typeof value !== "number" ? String(value) : key.toLowerCase().includes("bps") ? `${value.toLocaleString()} bps per side` : key.toLowerCase().includes("cost") ? `$${value.toLocaleString(undefined, { maximumFractionDigits: 4 })}` : value.toLocaleString(undefined, { maximumFractionDigits: 4 }) })));
@@ -53,9 +58,36 @@ const fillPlot = computed(() => {
   const y = (price: number) => 28 + ((domainHigh - price) / (domainHigh - domainLow)) * 88;
   return { entryY: y(trade.entryPrice), exitY: y(trade.exitPrice) };
 });
-async function openFailure(failure: FailureEvidence, event: Event) { previousFocus = event.currentTarget as HTMLElement; selectedFailure.value = await store.inspectFailure(store.latestRun?.id ?? "", failure.id); await nextTick(); dialog.value?.focus(); }
+async function loadFailureDetails() {
+  await store.enrichFailures();
+}
+async function inspectSelectedFailure(restoreFocus = false) {
+  const failure = selectedFailure.value;
+  if (!failure) return;
+  const request = ++failureInspectionRequest;
+  failureDetailLoading.value = true;
+  const inspected = await store.inspectFailure(store.latestRun?.id ?? "", failure.id);
+  if (request !== failureInspectionRequest || selectedFailure.value?.id !== failure.id) return;
+  if (inspected) selectedFailure.value = inspected;
+  failureInspectionFailed.value = !inspected;
+  failureDetailLoading.value = false;
+  if (!restoreFocus) return;
+  await nextTick();
+  if (failureInspectionFailed.value) failureRetryButton.value?.focus();
+  else dialog.value?.focus();
+}
+async function openFailure(failure: FailureEvidence, event: Event) {
+  previousFocus = event.currentTarget as HTMLElement;
+  failureInspectionRequest += 1;
+  failureInspectionFailed.value = false;
+  selectedFailure.value = failure;
+  await nextTick();
+  dialog.value?.focus();
+  await inspectSelectedFailure();
+}
+async function retrySelectedFailure() { await inspectSelectedFailure(true); }
 async function openTrade(trade: Trade, event: Event) { previousFocus = event.currentTarget as HTMLElement; selectedTrade.value = trade; await nextTick(); dialog.value?.focus(); }
-function closeDialog() { selectedFailure.value = null; selectedTrade.value = null; nextTick(() => previousFocus?.focus()); }
+function closeDialog() { failureInspectionRequest += 1; failureDetailLoading.value = false; failureInspectionFailed.value = false; selectedFailure.value = null; selectedTrade.value = null; nextTick(() => previousFocus?.focus()); }
 function handleDialogKey(event: KeyboardEvent) {
   if (!selectedFailure.value && !selectedTrade.value) return;
   if (event.key === "Escape") { event.preventDefault(); closeDialog(); return; }
@@ -68,7 +100,7 @@ function handleDialogKey(event: KeyboardEvent) {
 }
 window.addEventListener("keydown", handleDialogKey);
 onBeforeUnmount(() => window.removeEventListener("keydown", handleDialogKey));
-watch(() => `${store.latestRun?.id ?? ""}:${(store.result?.failures ?? []).map((failure) => failure.id).join(",")}`, () => { void store.enrichFailures(); }, { immediate: true });
+watch(() => `${store.latestRun?.id ?? ""}:${(store.result?.failures ?? []).map((failure) => failure.id).join(",")}`, () => { void loadFailureDetails(); }, { immediate: true });
 watch([signalStatusFilter, signalSymbolFilter], () => { signalPage.value = 1; });
 </script>
 
@@ -94,25 +126,37 @@ watch([signalStatusFilter, signalSymbolFilter], () => { signalPage.value = 1; })
             <p class="eyebrow">Evidence</p>
             <h2 id="failure-heading">Stress periods</h2>
           </div>
-          <CircleAlert :size="19" aria-hidden="true" />
+          <span class="failure-count">{{ displayFailures.length }} {{ displayFailures.length === 1 ? "period" : "periods" }}</span>
         </header>
 
-        <p v-if="store.failureLoading" class="enrichment-state" role="status">Loading period evidence…</p>
-        <div v-else-if="displayFailures.length" class="failure-list">
+        <div v-if="store.failureLoading || store.failureEvidenceError" class="enrichment-state" role="status">
+          <template v-if="store.failureLoading">
+            <span class="enrichment-state__pulse" aria-hidden="true" />
+            <span>Updating period details…</span>
+          </template>
+          <template v-else>
+            <CircleAlert :size="14" aria-hidden="true" />
+            <span>Some period details are unavailable.</span>
+            <button type="button" :title="store.failureEvidenceError ?? undefined" @click="loadFailureDetails">Try again</button>
+          </template>
+        </div>
+        <div v-if="displayFailures.length" class="failure-list">
           <button
             v-for="(failure, index) in displayFailures"
             :key="failure.id"
             class="failure-row"
-            :class="{ 'failure-row--primary': index === 0 }"
             type="button"
             @click="openFailure(failure, $event)"
           >
             <span class="failure-row__index">{{ String(index + 1).padStart(2, "0") }}</span>
             <span class="failure-row__body">
               <strong>{{ failure.title }}</strong>
-              <small>{{ failure.period }} <i /> {{ failure.regime }}</small>
+              <small>
+                <span>{{ failure.period }}</span>
+                <template v-if="isReported(failure.regime)"><i /><span>{{ failure.regime }}</span></template>
+              </small>
             </span>
-            <span class="failure-row__change">{{ failure.equityChange }}</span>
+            <span class="failure-row__change" :class="{ 'failure-row__change--missing': !isReported(failure.equityChange) }">{{ isReported(failure.equityChange) ? failure.equityChange : "—" }}</span>
             <ChevronRight :size="16" aria-hidden="true" />
           </button>
         </div>
@@ -140,15 +184,26 @@ watch([signalStatusFilter, signalSymbolFilter], () => { signalPage.value = 1; })
 
         <div class="trade-table-wrap">
           <table>
-            <thead><tr><th>Symbol</th><th>Held</th><th>Fills</th><th>Net</th><th>Exit</th><th><span class="sr-only">Inspect</span></th></tr></thead>
+            <caption class="sr-only">Completed trades recorded by this Court run</caption>
+            <colgroup>
+              <col class="trade-column--trade" />
+              <col class="trade-column--period" />
+              <col class="trade-column--price" />
+              <col class="trade-column--price" />
+              <col class="trade-column--pnl" />
+              <col class="trade-column--reason" />
+              <col class="trade-column--view" />
+            </colgroup>
+            <thead><tr><th>Trade</th><th>Period</th><th>Entry</th><th>Exit</th><th>P&amp;L</th><th>Reason</th><th>View</th></tr></thead>
             <tbody>
               <tr v-for="trade in visibleTrades" :key="trade.id">
-                <td><strong class="symbol">{{ trade.symbol }}</strong><small>{{ formatQuantity(trade.quantity) }} shares</small></td>
-                <td class="mono trade-window">{{ trade.entryDate }} <ArrowRight :size="11" aria-hidden="true" /> {{ trade.exitDate }}</td>
-                <td class="mono">${{ trade.entryPrice.toFixed(2) }} <span aria-hidden="true">→</span> ${{ trade.exitPrice.toFixed(2) }}</td>
-                <td class="mono" :class="trade.netProfit >= 0 ? 'positive' : 'negative'">{{ formatMoney(trade.netProfit) }}</td>
-                <td>{{ trade.exitReason }}</td>
-                <td><button class="inspect-button" type="button" :aria-label="`Inspect ${trade.symbol} trade`" @click="openTrade(trade, $event)"><Search :size="13" /></button></td>
+                <td><div class="trade-identity"><strong class="symbol">{{ trade.symbol }}</strong><small>{{ formatQuantity(trade.quantity) }} shares</small></div></td>
+                <td><span class="mono trade-period">{{ trade.entryDate }} <span aria-hidden="true">→</span> {{ trade.exitDate }}</span></td>
+                <td><span class="mono trade-price">${{ trade.entryPrice.toFixed(2) }}</span></td>
+                <td><span class="mono trade-price">${{ trade.exitPrice.toFixed(2) }}</span></td>
+                <td><span class="mono trade-pnl" :class="trade.netProfit >= 0 ? 'trade-pnl--positive' : 'trade-pnl--negative'">{{ formatMoney(trade.netProfit) }}</span></td>
+                <td><span class="trade-reason" :title="trade.exitReason">{{ trade.exitReason }}</span></td>
+                <td><button class="inspect-button" type="button" :aria-label="`Inspect ${trade.symbol} trade from ${trade.entryDate}`" @click="openTrade(trade, $event)"><Search :size="14" /></button></td>
               </tr>
             </tbody>
           </table>
@@ -194,6 +249,22 @@ watch([signalStatusFilter, signalSymbolFilter], () => { signalPage.value = 1; })
         <div class="drawer-header"><div><p class="eyebrow">Stress period</p><h2 id="failure-title">{{ selectedFailure.title }}</h2></div><button class="drawer-close" type="button" aria-label="Close evidence inspector" @click="closeDialog"><X :size="18" /></button></div>
         <div class="drawer-body">
           <div class="drawer-period"><span>{{ selectedFailure.period }}</span><strong class="negative">{{ selectedFailure.equityChange }}</strong></div><p class="drawer-summary">{{ selectedFailure.summary }}</p>
+          <div
+            v-if="failureDetailLoading || failureInspectionFailed"
+            class="drawer-evidence-status"
+            :class="{ 'drawer-evidence-status--error': failureInspectionFailed && !failureDetailLoading }"
+            :role="failureInspectionFailed && !failureDetailLoading ? 'alert' : 'status'"
+          >
+            <CircleAlert v-if="failureInspectionFailed" :size="14" aria-hidden="true" />
+            <span>{{ failureDetailLoading ? (failureInspectionFailed ? "Trying again…" : "Loading complete period details…") : store.failureEvidenceError ?? "Complete period details could not be loaded." }}</span>
+            <button
+              v-if="failureInspectionFailed"
+              ref="failureRetryButton"
+              type="button"
+              :disabled="failureDetailLoading"
+              @click="retrySelectedFailure"
+            >{{ failureDetailLoading ? "Trying again…" : "Try again" }}</button>
+          </div>
           <div class="evidence-label">Observed inputs</div><dl class="input-list"><div v-for="input in selectedFailure.inputs" :key="input.label"><dt>{{ input.label }}</dt><dd>{{ input.value }}</dd></div></dl>
           <template v-if="failureCosts.length"><div class="evidence-label">Returned execution costs</div><dl class="input-list"><div v-for="cost in failureCosts" :key="cost.label"><dt>{{ cost.label }}</dt><dd>{{ cost.value }}</dd></div></dl></template>
           <template v-if="indicatorInputs.length || indicatorSeries.length"><div class="evidence-label">Returned indicator evidence</div><dl class="input-list"><div v-for="(input,index) in indicatorInputs" :key="`input-${index}`"><dt>Declared indicator</dt><dd>{{ describeIndicator(input) }}</dd></div><div v-for="(series,index) in indicatorSeries" :key="`series-${index}`"><dt>Observed series</dt><dd>{{ describeSeries(series) }}</dd></div></dl></template>
@@ -343,7 +414,7 @@ watch([signalStatusFilter, signalSymbolFilter], () => { signalPage.value = 1; })
   background: transparent;
   text-align: left;
   cursor: pointer;
-  transition: background 140ms ease, color 140ms ease;
+  transition: background-color 120ms ease, color 120ms ease;
 }
 
 .failure-row:last-child {
@@ -359,15 +430,6 @@ watch([signalStatusFilter, signalSymbolFilter], () => { signalPage.value = 1; })
 
 .failure-row:focus-visible {
   box-shadow: inset 0 0 0 1px #f1f1f1;
-}
-
-.failure-row--primary {
-  min-height: 106px;
-  background: #131313;
-}
-
-.failure-row--primary .failure-row__body strong {
-  font-size: clamp(17px, 2vw, 23px);
 }
 
 .failure-row__index {
@@ -414,7 +476,52 @@ watch([signalStatusFilter, signalSymbolFilter], () => { signalPage.value = 1; })
   font: 500 12px "IBM Plex Mono", monospace;
 }
 
-.enrichment-state,
+.failure-row__change--missing {
+  color: #5e5e5e;
+}
+
+.failure-count {
+  padding-top: 5px;
+  color: #707070;
+  font-size: 11px;
+}
+
+.enrichment-state {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+  padding: 10px 30px;
+  border-top: 1px solid rgba(255, 255, 255, .07);
+  color: #8d8d8d;
+  background: rgba(255, 255, 255, .018);
+  font-size: 11px;
+}
+
+.enrichment-state button {
+  margin-left: 2px;
+  padding: 0;
+  border: 0;
+  color: #d6d6d6;
+  background: transparent;
+  font: inherit;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  cursor: pointer;
+}
+
+.enrichment-state button:hover,
+.enrichment-state button:focus-visible {
+  color: #fff;
+}
+
+.enrichment-state__pulse {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #aaa;
+}
+
 .empty-line {
   margin: 0;
   padding: 24px 30px;
@@ -468,14 +575,23 @@ watch([signalStatusFilter, signalSymbolFilter], () => { signalPage.value = 1; })
 
 .trade-table-wrap table {
   width: 100%;
+  min-width: 900px;
   border-collapse: collapse;
-  font-size: 11px;
+  table-layout: fixed;
+  font-size: 12px;
   white-space: nowrap;
 }
 
+.trade-column--trade { width: 15%; }
+.trade-column--period { width: 23%; }
+.trade-column--price { width: 11%; }
+.trade-column--pnl { width: 13%; }
+.trade-column--reason { width: 20%; }
+.trade-column--view { width: 64px; }
+
 .trade-table-wrap th {
-  padding: 14px 12px;
-  color: #626262;
+  padding: 13px 14px;
+  color: #838383;
   font: 600 10px Inter, ui-sans-serif, system-ui, sans-serif;
   text-align: left;
   text-transform: none;
@@ -493,9 +609,10 @@ watch([signalStatusFilter, signalSymbolFilter], () => { signalPage.value = 1; })
 }
 
 .trade-table-wrap td {
-  padding: 17px 12px;
+  padding: 15px 14px;
   border-top: 1px solid rgba(255, 255, 255, .065);
-  color: #969696;
+  color: #b8b8b8;
+  vertical-align: middle;
 }
 
 .trade-table-wrap tbody tr {
@@ -506,20 +623,40 @@ watch([signalStatusFilter, signalSymbolFilter], () => { signalPage.value = 1; })
   background: rgba(255, 255, 255, .025);
 }
 
-.trade-table-wrap td:first-child {
+.trade-identity {
   display: grid;
-  gap: 4px;
+  gap: 5px;
 }
 
-.trade-table-wrap td:first-child small {
-  color: #5f5f5f;
-  font-size: 9px;
+.trade-identity small {
+  color: #777;
+  font-size: 10px;
 }
 
-.trade-table-wrap td:nth-child(2) {
-  display: flex;
-  align-items: center;
-  gap: 7px;
+.trade-period,
+.trade-price,
+.trade-pnl {
+  color: #c1c1c1;
+  font-size: 11px;
+}
+
+.trade-pnl {
+  font-weight: 600;
+}
+
+.trade-pnl--positive {
+  color: #87b99a;
+}
+
+.trade-pnl--negative {
+  color: #cf8e87;
+}
+
+.trade-reason {
+  display: block;
+  overflow: hidden;
+  color: #b0b0b0;
+  text-overflow: ellipsis;
 }
 
 .symbol {
@@ -530,13 +667,13 @@ watch([signalStatusFilter, signalSymbolFilter], () => { signalPage.value = 1; })
 
 .inspect-button {
   display: grid;
-  width: 30px;
-  height: 30px;
+  width: 32px;
+  height: 32px;
   place-items: center;
   border: 1px solid #333;
-  border-radius: 2px;
-  color: #aaa;
-  background: transparent;
+  border-radius: 6px;
+  color: #b8b8b8;
+  background: #111;
   cursor: pointer;
 }
 
@@ -606,7 +743,7 @@ watch([signalStatusFilter, signalSymbolFilter], () => { signalPage.value = 1; })
   font-size: 10px;
 }
 
-.signal-controls{display:flex;flex-wrap:wrap;gap:12px;padding:2px 0 18px}.signal-control{display:flex;align-items:center;gap:8px}.signal-control label{color:#686868;font-size:10px}.signal-select{width:110px}.signal-select :deep(.form-select__trigger){min-height:32px;padding:0 8px;border:1px solid #303030;border-radius:8px;color:#ccc;background:#151515;box-shadow:none}.signal-select :deep(.form-select__trigger:hover:not(:disabled)),.signal-select :deep(.form-select__trigger:focus-visible){border-color:#555;background:#181818;box-shadow:none}.signal-select :deep(.form-select__value){font-size:10px}.signal-select :deep(.form-select__listbox){min-width:110px}.signal-select :deep(.form-select__option){min-height:34px;font-size:11px}.signal-table-wrap td:first-child{display:table-cell}.signal-table-wrap td:nth-child(2){display:table-cell}.signal-pagination{display:flex;align-items:center;justify-content:flex-end;gap:12px;padding:14px 0 22px;color:#777;font-size:10px}.signal-pagination button{min-height:30px;padding:0 10px;border:1px solid #303030;border-radius:8px;color:#bbb;background:#151515;cursor:pointer}.signal-pagination button:disabled{opacity:.35;cursor:default}
+.signal-controls{display:flex;flex-wrap:wrap;gap:12px;padding:2px 0 18px}.signal-control{display:flex;align-items:center;gap:8px}.signal-control label{color:#686868;font-size:10px}.signal-select{width:110px}.signal-select :deep(.form-select__trigger){min-height:32px;padding:0 8px;border:1px solid #303030;border-radius:8px;color:#ccc;background:#151515;box-shadow:none}.signal-select :deep(.form-select__trigger:hover:not(:disabled)),.signal-select :deep(.form-select__trigger:focus-visible){border-color:#555;background:#181818;box-shadow:none}.signal-select :deep(.form-select__value){font-size:10px}.signal-select :deep(.form-select__listbox){min-width:110px}.signal-select :deep(.form-select__option){min-height:34px;font-size:11px}.signal-pagination{display:flex;align-items:center;justify-content:flex-end;gap:12px;padding:14px 0 22px;color:#777;font-size:10px}.signal-pagination button{min-height:30px;padding:0 10px;border:1px solid #303030;border-radius:8px;color:#bbb;background:#151515;cursor:pointer}.signal-pagination button:disabled{opacity:.35;cursor:default}
 
 .assumptions dt {
   color: #626262;
@@ -716,6 +853,44 @@ watch([signalStatusFilter, signalSymbolFilter], () => { signalPage.value = 1; })
   color: #aaa;
   font-size: 13px;
   line-height: 1.65;
+}
+
+.drawer-evidence-status {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 12px 0;
+  border-block: 1px solid rgba(255, 255, 255, .08);
+  color: #8d8d8d;
+  font-size: 11px;
+  line-height: 1.45;
+}
+
+.drawer-evidence-status--error {
+  color: #b9b9b9;
+}
+
+.drawer-evidence-status button {
+  flex: 0 0 auto;
+  margin-left: auto;
+  padding: 0;
+  border: 0;
+  color: #e3e3e3;
+  background: transparent;
+  font: inherit;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  cursor: pointer;
+}
+
+.drawer-evidence-status button:hover,
+.drawer-evidence-status button:focus-visible {
+  color: #fff;
+}
+
+.drawer-evidence-status button:disabled {
+  color: #777;
+  cursor: wait;
 }
 
 .evidence-label {
@@ -903,10 +1078,6 @@ watch([signalStatusFilter, signalSymbolFilter], () => { signalPage.value = 1; })
 
   .failure-row > svg {
     display: none;
-  }
-
-  .failure-row--primary {
-    min-height: 94px;
   }
 
   .section-heading {

@@ -18,6 +18,7 @@ test("builds ordered OHLCV series and exact selected-symbol fill markers", () =>
   expect(result.candles.map((bar) => bar.time)).toEqual(["2024-01-02", "2024-01-03"]);
   expect(result.closes.map((point) => point.value)).toEqual([99, 104]);
   expect(result.volume.map((point) => point.value)).toEqual([900, 1_200]);
+  expect(result.volume.map((point) => point.color)).toEqual(["#855050", "#4c725d"]);
   expect(result.markers).toEqual([
     expect.objectContaining({ id: "trade-1-entry", time: "2024-01-02", price: 100.25, position: "atPriceMiddle", shape: "arrowUp" }),
     expect.objectContaining({ id: "trade-1-exit", time: "2024-01-03", price: 103.75, position: "atPriceMiddle", shape: "arrowDown" }),

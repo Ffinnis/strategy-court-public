@@ -1,6 +1,6 @@
 import { evaluateLatestCompletedBar } from "@strategy-court/domain";
 import type { LatestBarMonitoringStatus, StrategyDefinition } from "@strategy-court/schemas";
-import type { Store } from "../store";
+import { calendarDate, type Store } from "../store";
 import type { Actor, CaseRecord, StrategyVersionRecord } from "../types";
 import type { MarketProvider } from "../providers/market";
 import { snapshotForDomain } from "../providers/market";
@@ -25,7 +25,7 @@ function row(value: Record<string, unknown>): MonitoringEvaluationRecord {
     caseId: String(value.case_id),
     strategyVersionId: String(value.strategy_version_id),
     dataSnapshotId: String(value.data_snapshot_id),
-    evaluatedDate: value.evaluated_date instanceof Date ? value.evaluated_date.toISOString().slice(0, 10) : String(value.evaluated_date),
+    evaluatedDate: calendarDate(value.evaluated_date),
     result,
     createdAt: value.created_at instanceof Date ? value.created_at.toISOString() : String(value.created_at),
   };

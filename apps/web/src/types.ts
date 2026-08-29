@@ -5,7 +5,12 @@ export interface ValueExpression {
   constant?: number;
   source?: string;
   indicator?: string;
-  parameters?: { period: number; source?: string };
+  parameters?: { period?: number; source?: string; [key: string]: unknown };
+  lag?: { value: ValueExpression; bars: number };
+  operation?: "add" | "subtract" | "multiply" | "divide" | "min" | "max";
+  left?: ValueExpression;
+  right?: ValueExpression;
+  absolute?: ValueExpression;
 }
 
 export interface ConditionNode {

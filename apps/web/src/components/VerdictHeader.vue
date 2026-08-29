@@ -1,11 +1,9 @@
 <script setup lang="ts">
 import { computed } from "vue";
-import { Bot, Database, Eye, Scale } from "lucide-vue-next";
+import { Bot, Eye, Scale, WandSparkles } from "lucide-vue-next";
 import { useCourtStore } from "@/stores/court";
 import FormSelect from "@/components/forms/FormSelect.vue";
 import StatusBadge from "@/components/StatusBadge.vue";
-
-withDefaults(defineProps<{ compact?: boolean }>(), { compact: false });
 
 const store = useCourtStore();
 const verdicts = computed(() => store.result?.verdicts ?? []);
@@ -19,14 +17,20 @@ const activeVersionId = computed({
   get: () => store.activeVersion?.id ?? "",
   set: (id: string) => store.selectVersion(id),
 });
+const agentToolsLabel = computed(() => {
+  if (store.webMcpStatus === "ready") return `${store.registeredToolNames.length} agent tools`;
+  if (store.webMcpStatus === "registering") return "Connecting agent tools";
+  if (store.webMcpStatus === "partial") return `${store.registeredToolNames.length} agent tools ready`;
+  return "Manual controls";
+});
 </script>
 
 <template>
-  <section class="verdict-header" :class="{ 'verdict-header--compact': compact }" aria-label="Current Court summary">
+  <section class="verdict-header" aria-label="Current Court summary">
     <div class="verdict-header__identity">
-      <div v-if="!compact" class="verdict-header__icon"><Scale :size="18" /></div>
+      <div class="verdict-header__icon"><Scale :size="18" /></div>
       <div class="verdict-header__name">
-        <span v-if="!compact" class="verdict-header__record">{{ store.currentCase?.id.slice(0, 8) }}</span>
+        <span class="verdict-header__record">{{ store.currentCase?.id.slice(0, 8) }}</span>
         <span class="verdict-header__case">{{ store.currentCase?.name }}</span>
         <div class="version-select-wrap">
           <label class="sr-only" for="version-select">Current strategy version</label>
@@ -53,11 +57,10 @@ const activeVersionId = computed({
       <span v-else class="verdict-header__state">{{ store.confirmed ? "Ready to test" : "Confirm the rules to continue" }}</span>
     </div>
 
-    <div class="verdict-header__facts">
-      <span title="API-backed case"><Database :size="13" />API snapshot</span>
-      <span><Bot :size="13" />{{ store.variants.length }}/3 variants</span>
-      <span><Eye :size="13" />Evaluation {{ store.currentCase?.evaluationViewed ? "viewed" : "unseen" }}</span>
-      <span><Eye :size="13" />Current version {{ store.activeVersion?.evaluationInformed ? "evaluation-informed" : "independent" }}</span>
+    <div class="verdict-header__facts" :data-webmcp-status="store.webMcpStatus">
+      <span><Eye :size="14" />Current version {{ store.activeVersion?.evaluationInformed ? "evaluation-informed" : "independent" }}</span>
+      <span><Bot :size="14" />{{ store.variants.length }}/3 variants · Evaluation {{ store.currentCase?.evaluationViewed ? "viewed" : "unseen" }}</span>
+      <span><WandSparkles :size="13" />{{ agentToolsLabel }}</span>
     </div>
   </section>
 </template>
@@ -65,21 +68,13 @@ const activeVersionId = computed({
 <style scoped lang="scss">
 .verdict-header {
   display: grid;
-  width: min(1264px, calc(100% - 56px));
+  width: min(1480px, calc(100% - 64px));
   min-height: 118px;
   grid-template-columns: minmax(280px, .9fr) minmax(360px, 1.2fr) auto;
   align-items: center;
   gap: 34px;
   margin: 0 auto;
   padding: 28px 0 24px;
-}
-
-.verdict-header--compact {
-  width: min(1480px, calc(100% - 64px));
-  min-height: 76px;
-  display: grid;
-  grid-template-columns: minmax(220px,.8fr) minmax(360px,1.2fr) auto;
-  padding: 17px 0 10px;
 }
 
 .verdict-header__identity { display: flex; min-width: 0; align-items: center; gap: 14px; }
@@ -113,7 +108,6 @@ const activeVersionId = computed({
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.verdict-header--compact .verdict-header__case { max-width: 650px; font-size: 19px; letter-spacing: -.025em; }
 .version-select-wrap { width: min(280px, 100%); margin-top: 6px; color: #7c7c7c; }
 .version-select :deep(.form-select__trigger) { min-height: 22px; padding: 0 3px 0 0; border: 0; border-radius: 4px; color: #8f8f8f; background: transparent; box-shadow: none; }
 .version-select :deep(.form-select__trigger:hover:not(:disabled)),
@@ -136,18 +130,17 @@ const activeVersionId = computed({
   background: #bdbdbd;
   box-shadow: 0 0 0 4px rgba(255,255,255,.03);
 }
-.verdict-header__facts { display: flex; align-items: flex-end; flex-direction: column; gap: 8px; padding-left: 22px; border-left: 1px solid rgba(255,255,255,.07); }
-.verdict-header__facts span { display: inline-flex; align-items: center; gap: 6px; color: #707070; font-size: 9px; white-space: nowrap; }
+.verdict-header__facts { display: flex; align-items: flex-end; flex-direction: column; gap: 7px; padding-left: 22px; border-left: 1px solid rgba(255,255,255,.07); }
+.verdict-header__facts span { display: inline-flex; align-items: center; gap: 7px; color: #8c8c8c; font-size: 11px; line-height: 1.35; white-space: nowrap; }
 .sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0,0,0,0); white-space: nowrap; }
 
 @media (max-width: 1050px) {
-  .verdict-header, .verdict-header--compact { grid-template-columns: 1fr 1.2fr; }
+  .verdict-header { grid-template-columns: 1fr 1.2fr; }
   .verdict-header__facts { grid-column: 1/-1; align-items: center; flex-direction: row; flex-wrap: wrap; padding: 12px 0 0; border-top: 1px solid rgba(255,255,255,.07); border-left: 0; }
 }
 @media (max-width: 720px) {
-  .verdict-header, .verdict-header--compact { width: 100%; min-height: 0; padding: 16px; }
-  .verdict-header, .verdict-header--compact { grid-template-columns: 1fr; gap: 15px; }
+  .verdict-header { width: 100%; min-height: 0; grid-template-columns: 1fr; gap: 15px; padding: 16px; }
   .verdict-header__result { align-items: flex-start; justify-content: space-between; }
-  .verdict-header__case, .verdict-header--compact .verdict-header__case { max-width: 78vw; font-size: 18px; }
+  .verdict-header__case { max-width: 78vw; font-size: 18px; }
 }
 </style>

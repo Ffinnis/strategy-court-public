@@ -396,7 +396,7 @@ export function useWebMcp(enabled: Readonly<Ref<boolean>> = ref(true)): DeepRead
         execute: execute(async (input, signal) => {
           if (!store.currentCase?.runs.some((run) => run.id === input.runId)) throw new Error("Use a runId from the active case returned by get_case_context.");
           const failure = await store.inspectFailure(String(input.runId), String(input.failureId), "agent", signal);
-          if (!failure) throw new Error(store.error ?? "Failure evidence could not be loaded.");
+          if (!failure) throw new Error(store.failureEvidenceError ?? "Failure evidence could not be loaded.");
           store.activeTab = "evidence";
           return state(`Loaded failure ${String(input.failureId)}. Use its evidence to form a bounded variant hypothesis.`, { failure });
         }),

@@ -38,8 +38,13 @@ function timestamp(value: unknown): string {
   return String(value);
 }
 
-function date(value: unknown): string {
-  if (value instanceof Date) return value.toISOString().slice(0, 10);
+export function calendarDate(value: unknown): string {
+  if (value instanceof Date) {
+    const year = value.getFullYear();
+    const month = String(value.getMonth() + 1).padStart(2, "0");
+    const day = String(value.getDate()).padStart(2, "0");
+    return `${year}-${month}-${day}`;
+  }
   return String(value);
 }
 
@@ -49,8 +54,8 @@ function caseFromRow(row: Row): CaseRecord {
     name: String(row.name),
     description: String(row.description),
     symbols: json<string[]>(row.symbols_json, []),
-    dateFrom: date(row.date_from),
-    dateTo: date(row.date_to),
+    dateFrom: calendarDate(row.date_from),
+    dateTo: calendarDate(row.date_to),
     initialCapital: Number(row.initial_capital),
     commissionBps: Number(row.commission_bps),
     slippageBps: Number(row.slippage_bps),
@@ -104,8 +109,8 @@ function replayFromRow(row: Row): ReplayRecord {
     caseId: String(row.case_id),
     strategyVersionId: String(row.strategy_version_id),
     runId: String(row.run_id),
-    reservedFrom: date(row.reserved_from),
-    reservedTo: date(row.reserved_to),
+    reservedFrom: calendarDate(row.reserved_from),
+    reservedTo: calendarDate(row.reserved_to),
     cursor: Number(row.cursor),
     status: String(row.status) as ReplayRecord["status"],
     state: json<Record<string, unknown>>(row.state_json, {}),
@@ -120,8 +125,8 @@ function snapshotFromRow(row: Row): SnapshotRecord {
     provider: String(row.provider),
     adjustment: String(row.adjustment),
     feed: String(row.feed),
-    dateFrom: date(row.date_from),
-    dateTo: date(row.date_to),
+    dateFrom: calendarDate(row.date_from),
+    dateTo: calendarDate(row.date_to),
     symbols: json(row.symbols_json, []),
     fetchedAt: timestamp(row.fetched_at),
     hash: String(row.hash),

@@ -14,7 +14,7 @@ import type { IChartApi, ISeriesApi, MouseEventParams, SeriesMarker, Time } from
 import { ArrowDown, ArrowUp, CandlestickChart, CircleAlert } from "lucide-vue-next";
 import FormSelect from "@/components/forms/FormSelect.vue";
 import type { MarketEvidence, MarketEvidenceBar, Trade } from "@/types";
-import { buildMarketChartSeries } from "@/charts/marketChartData";
+import { buildMarketChartSeries, MARKET_TONES } from "@/charts/marketChartData";
 
 const props = withDefaults(defineProps<{
   evidence: MarketEvidence;
@@ -173,13 +173,13 @@ async function initializeChart(): Promise<void> {
   });
 
   candleSeries = chart.addSeries(CandlestickSeries, {
-    upColor: "#ededed",
-    downColor: "#575757",
+    upColor: MARKET_TONES.up,
+    downColor: MARKET_TONES.down,
     borderVisible: true,
-    borderUpColor: "#f5f5f5",
-    borderDownColor: "#8b8b8b",
-    wickUpColor: "#cfcfcf",
-    wickDownColor: "#8b8b8b",
+    borderUpColor: MARKET_TONES.up,
+    borderDownColor: MARKET_TONES.down,
+    wickUpColor: MARKET_TONES.up,
+    wickDownColor: MARKET_TONES.down,
     priceLineColor: "#777",
     priceLineStyle: LineStyle.Dotted,
     lastValueVisible: true,

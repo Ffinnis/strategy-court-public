@@ -9,6 +9,13 @@ export interface MarketChartSeries {
   markers: SeriesMarker<Time>[];
 }
 
+export const MARKET_TONES = {
+  up: "#6d9f82",
+  down: "#a66767",
+  upVolume: "#4c725d",
+  downVolume: "#855050",
+} as const;
+
 const chartTime = (date: string) => date.slice(0, 10) as Time;
 
 export function buildMarketChartSeries(
@@ -62,7 +69,7 @@ export function buildMarketChartSeries(
     volume: sortedBars.map((bar) => ({
       time: chartTime(bar.date),
       value: bar.volume,
-      color: bar.close >= bar.open ? "rgba(224,224,224,.30)" : "rgba(112,112,112,.48)",
+      color: bar.close >= bar.open ? MARKET_TONES.upVolume : MARKET_TONES.downVolume,
     })),
     markers,
   };

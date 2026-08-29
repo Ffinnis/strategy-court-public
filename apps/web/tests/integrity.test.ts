@@ -72,6 +72,68 @@ describe("connected-state integrity", () => {
     expect(courtCase.replays.map((item) => item.id)).toEqual(["new-replay", "old-replay"]);
   });
 
+  test("viewing a variant does not change the server-confirmed variant parent", () => {
+    setActivePinia(createPinia());
+    const store = useCourtStore();
+    store.currentCase = normalizeCase({
+      id: "c1", name: "Trend", activeVersionId: "baseline", runs: [], replays: [], audit: [],
+      versions: [
+        { id: "baseline", confirmed: true, definition: {}, interpretation: "Baseline" },
+        { id: "variant", parentVersionId: "baseline", definition: {}, interpretation: "Variant" },
+      ],
+    });
+    store.selectVersion("variant");
+
+    expect(store.activeVersion?.id).toBe("variant");
+    expect(store.variantParentVersion?.id).toBe("baseline");
+    expect(store.currentCase.activeVersionId).toBe("baseline");
+  });
+
+  test("variant creation sends the server-confirmed parent after viewing a child", async () => {
+    setActivePinia(createPinia());
+    const store = useCourtStore();
+    const result = {
+      summaryLabel: "Surviving",
+      metrics: { netReturnPercent: 4.2 },
+      verdicts: [{ id: "risk", category: "risk", status: "Pass" }],
+      failures: [],
+    };
+    const casePayload = {
+      id: "c1", name: "Trend", activeVersionId: "baseline", replays: [], audit: [],
+      versions: [
+        { id: "baseline", confirmed: true, definition: {}, interpretation: "Baseline" },
+        { id: "viewed", parentVersionId: "baseline", definition: {}, interpretation: "Viewed" },
+      ],
+      runs: [{ id: "baseline-run", strategyVersionId: "baseline", status: "completed", progress: 100, result }],
+    };
+    store.currentCase = normalizeCase(casePayload);
+    store.selectVersion("viewed");
+    const bodies: Record<string, unknown>[] = [];
+    globalThis.fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+      const path = String(input);
+      if (init?.method === "POST") {
+        bodies.push(JSON.parse(String(init.body)) as Record<string, unknown>);
+        return new Response(JSON.stringify({
+          versions: [{ id: "created" }],
+          runs: [{ id: "created-run", strategyVersionId: "created", status: "completed", progress: 100, result }],
+        }), { status: 202, headers: { "content-type": "application/json" } });
+      }
+      if (path.includes("/comparison")) {
+        return new Response(JSON.stringify({ comparison: { caseId: "c1", versions: [] } }), { status: 200, headers: { "content-type": "application/json" } });
+      }
+      return new Response(JSON.stringify({ case: casePayload }), { status: 200, headers: { "content-type": "application/json" } });
+    }) as typeof fetch;
+
+    const created = await store.createVariants([{
+      name: "Shorter hold", hypothesis: "Reduce tail risk", rationale: "One controlled change",
+      expectedWeaknessAddressed: "Risk", patch: { risk: { maxHoldingDays: 60 } },
+    }]);
+
+    expect(created).toEqual(["created"]);
+    expect(bodies[0]?.parentVersionId).toBe("baseline");
+    expect(store.currentCase?.activeVersionId).toBe("baseline");
+  });
+
   test("replay normalization keeps cumulative trades and historical comparisons", () => {
     const courtCase = normalizeCase({
       id: "c1", name: "Case", versions: [], runs: [], audit: [], replays: [{

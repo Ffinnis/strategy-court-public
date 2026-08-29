@@ -5,7 +5,6 @@ import { Bot, ScrollText, X } from "lucide-vue-next";
 import { useCourtStore } from "@/stores/court";
 import type { WorkspaceTab } from "@/types";
 import VerdictHeader from "@/components/VerdictHeader.vue";
-import AgentRail from "@/components/AgentRail.vue";
 import StrategyTab from "@/components/tabs/StrategyTab.vue";
 import CourtTab from "@/components/tabs/CourtTab.vue";
 import EvidenceTab from "@/components/tabs/EvidenceTab.vue";
@@ -32,8 +31,24 @@ const activeComponent = computed(() => ({
   audit: AuditTab,
 })[store.activeTab]);
 const caseId = computed(() => String(route.params.caseId));
-const focusedResult = computed(() => store.courtComplete && (store.activeTab === "court" || store.activeTab === "evidence"));
 const tablist = ref<HTMLElement | null>(null);
+
+async function settleTabScroll() {
+  store.clearError();
+
+  const header = document.querySelector<HTMLElement>(".verdict-header");
+  const headerBottom = header ? window.scrollY + header.getBoundingClientRect().bottom : 0;
+  if (window.scrollY <= headerBottom + 24) return;
+
+  await nextTick();
+  const panel = document.getElementById(`panel-${store.activeTab}`);
+  if (!panel || !tablist.value) return;
+
+  const stickyTop = Number.parseFloat(getComputedStyle(tablist.value).top) || 0;
+  const panelTop = window.scrollY + panel.getBoundingClientRect().top;
+  const target = panelTop - stickyTop - tablist.value.getBoundingClientRect().height - 24;
+  window.scrollTo({ top: Math.max(0, target), behavior: "auto" });
+}
 
 function moveTab(event: KeyboardEvent) {
   if (!["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key)) return;
@@ -50,6 +65,7 @@ function moveTab(event: KeyboardEvent) {
 
 onMounted(() => store.loadCase(caseId.value));
 watch(caseId, (id) => store.loadCase(id));
+watch(() => store.activeTab, settleTabScroll);
 </script>
 
 <template>
@@ -63,11 +79,10 @@ watch(caseId, (id) => store.loadCase(id));
     </template>
 
     <template v-else-if="store.currentCase">
-      <VerdictHeader :compact="focusedResult" />
+      <VerdictHeader />
       <nav
         ref="tablist"
         class="workspace-tabs"
-        :class="{ 'workspace-tabs--focused': focusedResult }"
         aria-label="Court workspace sections"
         role="tablist"
         @keydown="moveTab"
@@ -87,18 +102,19 @@ watch(caseId, (id) => store.loadCase(id));
         >{{ tab.label }}</button>
       </nav>
 
-      <div v-if="store.notice" class="workspace-notice">
-        <Bot :size="14" /><span>{{ store.notice }}</span><button aria-label="Dismiss notice" @click="store.notice = null"><X :size="14" /></button>
-      </div>
-      <div v-if="store.error" class="workspace-error" role="alert">
-        <ScrollText :size="14" /><span>{{ store.error }}</span><button aria-label="Dismiss error" @click="store.clearError"><X :size="14" /></button>
+      <div v-if="store.notice || store.error" class="workspace-messages" aria-live="polite">
+        <div v-if="store.notice" class="workspace-message">
+          <Bot :size="15" /><span>{{ store.notice }}</span><button aria-label="Dismiss notice" @click="store.notice = null"><X :size="14" /></button>
+        </div>
+        <div v-if="store.error" class="workspace-message workspace-message--error" role="alert">
+          <ScrollText :size="15" /><span>{{ store.error }}</span><button aria-label="Dismiss error" @click="store.clearError"><X :size="14" /></button>
+        </div>
       </div>
 
-      <div class="workspace-layout" :class="{ 'workspace-layout--focused': focusedResult }">
+      <div class="workspace-layout">
         <section :id="`panel-${store.activeTab}`" class="workspace-content" role="tabpanel" :aria-labelledby="`tab-${store.activeTab}`">
-          <Transition name="tab-fade" mode="out-in"><component :is="activeComponent" :key="store.activeTab" /></Transition>
+          <component :is="activeComponent" :key="store.activeTab" />
         </section>
-        <AgentRail v-if="!focusedResult" />
       </div>
     </template>
 
@@ -112,13 +128,13 @@ watch(caseId, (id) => store.loadCase(id));
 </template>
 
 <style scoped lang="scss">
-.workspace-page { min-height: calc(100vh - 104px); background: transparent; }
+.workspace-page { --workspace-shell: 1480px; min-height: calc(100vh - 104px); background: transparent; }
 .workspace-tabs {
   position: sticky;
   z-index: 40;
   top: 64px;
   display: flex;
-  width: min(1264px, calc(100% - 56px));
+  width: min(var(--workspace-shell), calc(100% - 64px));
   gap: 22px;
   margin: 0 auto;
   overflow-x: auto;
@@ -128,7 +144,6 @@ watch(caseId, (id) => store.loadCase(id));
   backdrop-filter: blur(18px);
   scrollbar-width: none;
 }
-.workspace-tabs--focused { width: min(1480px, calc(100% - 64px)); }
 .workspace-tabs::-webkit-scrollbar { display: none; }
 .workspace-tab {
   position: relative;
@@ -161,61 +176,59 @@ watch(caseId, (id) => store.loadCase(id));
 }
 .workspace-tab--active { color: #fff; }
 .workspace-tab--active::after { opacity: 1; transform: scaleX(1); box-shadow: 0 0 18px rgba(255,255,255,.24); }
-.workspace-notice, .workspace-error {
+.workspace-messages {
+  position: fixed;
+  z-index: 90;
+  top: 82px;
+  right: 24px;
+  display: grid;
+  width: min(420px, calc(100% - 32px));
+  gap: 8px;
+  pointer-events: none;
+}
+.workspace-message {
   display: flex;
-  width: min(1264px, calc(100% - 56px));
   align-items: center;
   gap: 9px;
-  margin: 18px auto -10px;
-  padding: 11px 13px;
-  border: 1px solid #2b2b2b;
-  color: #d0d0d0;
-  background: #141414;
-  font-size: 11px;
-  box-shadow: 0 18px 50px rgba(0,0,0,.28);
+  padding: 12px 13px;
+  border: 1px solid rgba(255,255,255,.11);
+  border-radius: 10px;
+  color: #d8d8d8;
+  background: rgba(20,20,20,.94);
+  font-size: 12px;
+  line-height: 1.45;
+  box-shadow: 0 18px 55px rgba(0,0,0,.48), inset 0 1px 0 rgba(255,255,255,.035);
+  backdrop-filter: blur(16px);
+  pointer-events: auto;
 }
-.workspace-notice button, .workspace-error button { display: grid; margin-left: auto; padding: 3px; border: 0; color: inherit; background: transparent; cursor: pointer; }
+.workspace-message--error { border-color: rgba(166,103,103,.5); }
+.workspace-message button { display: grid; flex: 0 0 auto; margin-left: auto; padding: 4px; border: 0; color: #9a9a9a; background: transparent; cursor: pointer; }
+.workspace-message button:hover { color: #fff; }
 .workspace-layout {
   display: grid;
-  width: min(1264px, calc(100% - 56px));
-  grid-template-columns: minmax(0,1fr) 276px;
-  align-items: start;
-  gap: 58px;
-  margin: 0 auto;
-  padding: 46px 0 110px;
-}
-.workspace-layout--focused {
-  width: min(1480px, calc(100% - 64px));
+  width: min(var(--workspace-shell), calc(100% - 64px));
   grid-template-columns: minmax(0,1fr);
-  padding-top: 52px;
+  align-items: start;
+  margin: 0 auto;
+  padding: 48px 0 110px;
 }
-.workspace-content { min-width: 0; animation: workspace-in 260ms cubic-bezier(.2,.8,.2,1); }
-@keyframes workspace-in { from { opacity: 0; transform: translateY(7px); } }
-.tab-fade-enter-active, .tab-fade-leave-active { transition: opacity 130ms ease, transform 130ms ease; }
-.tab-fade-enter-from { opacity: 0; transform: translateY(3px); }
-.tab-fade-leave-to { opacity: 0; }
-.workspace-loading { width: min(1320px, calc(100% - 56px)); margin: 0 auto; padding: 26px 0; }
+.workspace-content { min-width: 0; }
+.workspace-loading { width: min(var(--workspace-shell), calc(100% - 64px)); margin: 0 auto; padding: 26px 0; }
 .skeleton--header { height: 104px; margin-bottom: 16px; }
 .skeleton--tabs { height: 46px; margin-bottom: 36px; }
-.loading-grid { display: grid; grid-template-columns: 1fr 276px; gap: 44px; }
+.loading-grid { display: grid; grid-template-columns: 1fr; }
 .skeleton--main { height: 520px; }
-.skeleton--rail { height: 390px; }
+.skeleton--rail { display: none; }
 .workspace-missing { display: flex; min-height: 620px; align-items: center; flex-direction: column; justify-content: center; padding: 30px; text-align: center; }
 .workspace-missing h1 { margin: 0 0 8px; font-size: 28px; font-weight: 600; letter-spacing: -.035em; }
 .workspace-missing p { margin: 0 0 22px; color: #949494; font-size: 13px; }
 
 @media (max-width: 1000px) {
-  .workspace-layout { grid-template-columns: 1fr; gap: 48px; }
-  .workspace-layout :deep(.agent-rail) { grid-template-columns: repeat(2,minmax(0,1fr)); padding-top: 18px; padding-left: 0; border-top: 1px solid #272727; border-left: 0; }
   .loading-grid { grid-template-columns: 1fr; }
-  .skeleton--rail { display: none; }
 }
 @media (max-width: 720px) {
-  .workspace-tabs, .workspace-tabs--focused { top: 60px; width: 100%; gap: 20px; padding: 7px 16px 9px; }
-  .workspace-layout, .workspace-layout--focused { width: 100%; padding: 32px 16px 78px; }
-  .workspace-notice, .workspace-error { width: calc(100% - 32px); }
-}
-@media (max-width: 560px) {
-  .workspace-layout :deep(.agent-rail) { grid-template-columns: 1fr; }
+  .workspace-tabs { top: 60px; width: 100%; gap: 20px; padding: 7px 16px 9px; }
+  .workspace-layout { width: 100%; padding: 32px 16px 78px; }
+  .workspace-messages { top: 76px; right: 16px; }
 }
 </style>

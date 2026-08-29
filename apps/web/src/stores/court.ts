@@ -380,6 +380,7 @@ export const useCourtStore = defineStore("court", () => {
   const comparisonLoading = ref(false);
   const failureLoading = ref(false);
   const failureEvidenceCache = ref<Record<string, FailureEvidence>>({});
+  const failureEvidenceError = ref<string | null>(null);
   const error = ref<string | null>(null);
   const notice = ref<string | null>(null);
   const monitoringStatus = ref<LatestBarMonitoringStatus | null>(null);
@@ -395,8 +396,15 @@ export const useCourtStore = defineStore("court", () => {
   const webMcpStatus = ref<"unsupported" | "registering" | "ready" | "partial" | "failed">("unsupported");
   const webMcpExpectedToolNames = ref<string[]>([]);
   const webMcpErrors = ref<Array<{ toolName: string; message: string }>>([]);
+  const selectedVersionId = ref<string | null>(null);
 
-  const activeVersion = computed(() => currentCase.value?.versions.find((version) => version.id === currentCase.value?.activeVersionId) ?? currentCase.value?.versions.at(-1));
+  const activeVersion = computed(() => currentCase.value?.versions.find((version) => version.id === (selectedVersionId.value ?? currentCase.value?.activeVersionId)) ?? currentCase.value?.versions.at(-1));
+  const variantParentVersion = computed(() => currentCase.value?.versions.find((version) => version.id === currentCase.value?.activeVersionId));
+  const variantParentRun = computed(() => {
+    const versionId = variantParentVersion.value?.id;
+    return versionId ? currentCase.value?.runs.find((run) => run.versionId === versionId && run.status === "completed" && run.result) : undefined;
+  });
+  const variantParentResult = computed(() => variantParentRun.value?.result);
   const confirmed = computed(() => versionConfirmed(activeVersion.value));
   const latestRun = computed(() => {
     const runs = currentCase.value?.runs ?? [];
@@ -438,7 +446,9 @@ export const useCourtStore = defineStore("court", () => {
       if (!next.id) throw new Error("The API returned a case without an ID.");
       caseCosts.value = normalizeCaseCosts(rawCase, caseCosts.value);
       const nextActiveId = next.activeVersionId ?? next.versions.at(-1)?.id;
-      if (monitoringStatus.value && monitoringStatus.value.strategyVersionId !== nextActiveId) clearMonitoringState();
+      if (selectedVersionId.value && !next.versions.some((version) => version.id === selectedVersionId.value)) selectedVersionId.value = null;
+      const nextViewedId = selectedVersionId.value ?? nextActiveId;
+      if (monitoringStatus.value && monitoringStatus.value.strategyVersionId !== nextViewedId) clearMonitoringState();
       currentCase.value = next;
       return true;
     } catch (issue) {
@@ -466,6 +476,7 @@ export const useCourtStore = defineStore("court", () => {
       if (!created.id) throw new Error("The API did not return the created case ID.");
       caseCosts.value = normalizeCaseCosts(rawCase, input);
       currentCase.value = created;
+      selectedVersionId.value = null;
       await refreshCase();
       if (withDraft && currentCase.value?.versions.length === 0) {
         await createDraft(
@@ -481,7 +492,8 @@ export const useCourtStore = defineStore("court", () => {
   }
 
   async function loadCase(id: string, actor: ApiActor = "user"): Promise<void> {
-    loading.value = true; error.value = null; comparison.value = null; failureEvidenceCache.value = {};
+    loading.value = true; error.value = null; comparison.value = null; failureEvidenceCache.value = {}; failureEvidenceError.value = null;
+    selectedVersionId.value = null;
     clearMonitoringState();
     try {
       const payload = await apiRequest<unknown>(`/api/cases/${encodeURIComponent(id)}`, {}, actor);
@@ -563,12 +575,12 @@ export const useCourtStore = defineStore("court", () => {
   }
 
   async function createVariants(requested: Array<Record<string, unknown>>, actor: ApiActor = "user", signal?: AbortSignal): Promise<string[]> {
-    if (!currentCase.value || !courtComplete.value || variants.value.length >= 3) return [];
+    if (!currentCase.value || !variantParentVersion.value || !variantParentResult.value || variants.value.length >= 3) return [];
     if (!requested.length) { error.value = "Add at least one controlled variant."; return []; }
     mutating.value = true; error.value = null;
     const proposals = requested.map((proposal) => ({ ...proposal, patch: proposal.structuredPatch ?? proposal.patch }));
     try {
-      const payload = await apiRequest<Record<string, unknown>>(`/api/cases/${encodeURIComponent(currentCase.value.id)}/variants`, { method: "POST", body: JSON.stringify({ variants: proposals }), signal }, actor);
+      const payload = await apiRequest<Record<string, unknown>>(`/api/cases/${encodeURIComponent(currentCase.value.id)}/variants`, { method: "POST", body: JSON.stringify({ parentVersionId: variantParentVersion.value.id, variants: proposals }), signal }, actor);
       const createdVersions = Array.isArray(payload.versions) ? payload.versions.map((item) => record(item)) : [];
       const createdRuns = Array.isArray(payload.runs) ? payload.runs.map((item) => record(item)) : [];
       if (createdVersions.length === 0 || createdRuns.length === 0) throw new Error("The API did not return the created variants and Court runs.");
@@ -661,13 +673,13 @@ export const useCourtStore = defineStore("court", () => {
     const cacheKey = `${runId}:${failureId}`;
     if (failureEvidenceCache.value[cacheKey]) return failureEvidenceCache.value[cacheKey];
     const local = result.value?.failures.find((item) => item.id === failureId);
-    failureLoading.value = true; error.value = null;
+    failureLoading.value = true; failureEvidenceError.value = null;
     try {
       const payload = await apiRequest<unknown>(`/api/court-runs/${encodeURIComponent(runId)}/failures/${encodeURIComponent(failureId)}`, { signal }, actor);
       const enriched = normalizeFailure(unwrap<unknown>(payload, "failure"), 0, local?.trades ?? []);
       failureEvidenceCache.value[cacheKey] = enriched;
       return enriched;
-    } catch (issue) { error.value = messageFor(issue, "Could not load the failure evidence."); return null; }
+    } catch (issue) { failureEvidenceError.value = messageFor(issue, "Could not load this period's evidence."); return null; }
     finally { failureLoading.value = false; }
   }
 
@@ -677,29 +689,29 @@ export const useCourtStore = defineStore("court", () => {
     if (!runId || failures.length === 0) return;
     const pending = failures.filter((failure) => !failureEvidenceCache.value[`${runId}:${failure.id}`]);
     if (!pending.length) return;
-    failureLoading.value = true;
+    failureLoading.value = true; failureEvidenceError.value = null;
     const outcomes = await Promise.allSettled(pending.map(async (failure) => {
       const payload = await apiRequest<unknown>(`/api/court-runs/${encodeURIComponent(runId)}/failures/${encodeURIComponent(failure.id)}`, {}, actor);
       return normalizeFailure(unwrap<unknown>(payload, "failure"), 0, failure.trades);
     }));
     outcomes.forEach((outcome, index) => { if (outcome.status === "fulfilled") failureEvidenceCache.value[`${runId}:${pending[index]!.id}`] = outcome.value; });
     const rejected = outcomes.find((outcome): outcome is PromiseRejectedResult => outcome.status === "rejected");
-    if (rejected) error.value = messageFor(rejected.reason, "Some failure evidence could not be loaded.");
+    if (rejected) failureEvidenceError.value = messageFor(rejected.reason, "Some period details could not be loaded.");
     failureLoading.value = false;
   }
 
   function selectVersion(id: string): void {
     if (!currentCase.value?.versions.some((version) => version.id === id)) return;
-    currentCase.value.activeVersionId = id;
+    selectedVersionId.value = id === currentCase.value.activeVersionId ? null : id;
     if (monitoringStatus.value?.strategyVersionId !== id) clearMonitoringState();
   }
   function clearError(): void { error.value = null; }
 
   return {
-    currentCase, comparison, loading, mutating, comparisonLoading, failureLoading, failureEvidenceCache, error, notice, activeTab, caseCosts, webMcpSupported, registeredToolNames,
+    currentCase, comparison, loading, mutating, comparisonLoading, failureLoading, failureEvidenceCache, failureEvidenceError, error, notice, activeTab, caseCosts, webMcpSupported, registeredToolNames,
     monitoringStatus, monitoringEvaluation, monitoringLoading, monitoringError, monitoringLastSuccessAt, monitoringOperation,
     webMcpStatus, webMcpExpectedToolNames, webMcpErrors,
-    activeVersion, confirmed, latestRun, courtComplete, courtInvalid, result, replay, running, variants, eligibleReplayVersions, probationCandidate, monitoringCandidate,
+    activeVersion, variantParentVersion, variantParentRun, variantParentResult, selectedVersionId, confirmed, latestRun, courtComplete, courtInvalid, result, replay, running, variants, eligibleReplayVersions, probationCandidate, monitoringCandidate,
     createSample, createCase, loadCase, refreshCase, createDraft, confirmStrategy, runCourt, loadComparison, createVariants, startReplay, advanceReplay, loadMonitoringStatus, inspectFailure, enrichFailures,
     selectVersion, clearError, addAudit,
   };
