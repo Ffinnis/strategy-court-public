@@ -128,19 +128,20 @@ watch(() => store.activeTab, settleTabScroll);
 </template>
 
 <style scoped lang="scss">
-.workspace-page { --workspace-shell: 1480px; min-height: calc(100vh - 104px); background: transparent; }
+.workspace-page { min-height: calc(100vh - 104px); background: var(--surface-page); }
 .workspace-tabs {
   position: sticky;
   z-index: 40;
   top: 64px;
   display: flex;
-  width: min(var(--workspace-shell), calc(100% - 64px));
-  gap: 22px;
+  width: min(var(--workspace-shell), calc(100% - var(--workspace-gutter) - var(--workspace-gutter)));
+  min-height: 44px;
+  gap: 26px;
   margin: 0 auto;
   overflow-x: auto;
-  padding: 7px 0 9px;
-  border-bottom: 1px solid rgba(255,255,255,.065);
-  background: rgba(8,8,8,.84);
+  padding: 4px 0 7px;
+  border-bottom: 1px solid var(--line-subtle);
+  background: rgba(8,8,8,.9);
   backdrop-filter: blur(18px);
   scrollbar-width: none;
 }
@@ -152,30 +153,30 @@ watch(() => store.activeTab, settleTabScroll);
   align-items: center;
   padding: 0 2px;
   border: 0;
-  color: #666;
+  color: var(--text-faint);
   background: transparent;
   font-size: 11px;
   font-weight: 540;
   letter-spacing: .01em;
   white-space: nowrap;
   cursor: pointer;
-  transition: color 150ms ease;
+  transition: color var(--motion-fast);
 }
-.workspace-tab:hover { color: #cfcfcf; }
+.workspace-tab:hover { color: var(--text-secondary); }
 .workspace-tab::after {
   position: absolute;
   right: 0;
-  bottom: -10px;
+  bottom: -8px;
   left: 0;
   height: 1px;
   content: "";
-  background: #fff;
+  background: var(--text-primary);
   opacity: 0;
   transform: scaleX(.6);
   transition: opacity 150ms ease, transform 150ms ease;
 }
-.workspace-tab--active { color: #fff; }
-.workspace-tab--active::after { opacity: 1; transform: scaleX(1); box-shadow: 0 0 18px rgba(255,255,255,.24); }
+.workspace-tab--active { color: var(--text-primary); }
+.workspace-tab--active::after { opacity: 1; transform: scaleX(1); }
 .workspace-messages {
   position: fixed;
   z-index: 90;
@@ -206,14 +207,14 @@ watch(() => store.activeTab, settleTabScroll);
 .workspace-message button:hover { color: #fff; }
 .workspace-layout {
   display: grid;
-  width: min(var(--workspace-shell), calc(100% - 64px));
+  width: min(var(--workspace-shell), calc(100% - var(--workspace-gutter) - var(--workspace-gutter)));
   grid-template-columns: minmax(0,1fr);
   align-items: start;
   margin: 0 auto;
-  padding: 48px 0 110px;
+  padding: 34px 0 110px;
 }
-.workspace-content { min-width: 0; }
-.workspace-loading { width: min(var(--workspace-shell), calc(100% - 64px)); margin: 0 auto; padding: 26px 0; }
+.workspace-content { min-width: 0; min-height: 560px; }
+.workspace-loading { width: min(var(--workspace-shell), calc(100% - var(--workspace-gutter) - var(--workspace-gutter))); margin: 0 auto; padding: 20px 0; }
 .skeleton--header { height: 104px; margin-bottom: 16px; }
 .skeleton--tabs { height: 46px; margin-bottom: 36px; }
 .loading-grid { display: grid; grid-template-columns: 1fr; }
@@ -228,7 +229,7 @@ watch(() => store.activeTab, settleTabScroll);
 }
 @media (max-width: 720px) {
   .workspace-tabs { top: 60px; width: 100%; gap: 20px; padding: 7px 16px 9px; }
-  .workspace-layout { width: 100%; padding: 32px 16px 78px; }
+  .workspace-layout { width: 100%; padding: 26px 16px 78px; }
   .workspace-messages { top: 76px; right: 16px; }
 }
 </style>

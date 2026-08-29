@@ -120,49 +120,6 @@ watch([signalStatusFilter, signalSymbolFilter], () => { signalPage.value = 1; })
         :error="store.latestRun?.error ?? ''"
       />
 
-      <section class="failure-surface" aria-labelledby="failure-heading">
-        <header class="section-heading">
-          <div>
-            <p class="eyebrow">Evidence</p>
-            <h2 id="failure-heading">Stress periods</h2>
-          </div>
-          <span class="failure-count">{{ displayFailures.length }} {{ displayFailures.length === 1 ? "period" : "periods" }}</span>
-        </header>
-
-        <div v-if="store.failureLoading || store.failureEvidenceError" class="enrichment-state" role="status">
-          <template v-if="store.failureLoading">
-            <span class="enrichment-state__pulse" aria-hidden="true" />
-            <span>Updating period details…</span>
-          </template>
-          <template v-else>
-            <CircleAlert :size="14" aria-hidden="true" />
-            <span>Some period details are unavailable.</span>
-            <button type="button" :title="store.failureEvidenceError ?? undefined" @click="loadFailureDetails">Try again</button>
-          </template>
-        </div>
-        <div v-if="displayFailures.length" class="failure-list">
-          <button
-            v-for="(failure, index) in displayFailures"
-            :key="failure.id"
-            class="failure-row"
-            type="button"
-            @click="openFailure(failure, $event)"
-          >
-            <span class="failure-row__index">{{ String(index + 1).padStart(2, "0") }}</span>
-            <span class="failure-row__body">
-              <strong>{{ failure.title }}</strong>
-              <small>
-                <span>{{ failure.period }}</span>
-                <template v-if="isReported(failure.regime)"><i /><span>{{ failure.regime }}</span></template>
-              </small>
-            </span>
-            <span class="failure-row__change" :class="{ 'failure-row__change--missing': !isReported(failure.equityChange) }">{{ isReported(failure.equityChange) ? failure.equityChange : "—" }}</span>
-            <ChevronRight :size="16" aria-hidden="true" />
-          </button>
-        </div>
-        <p v-else class="empty-line">No failure periods were returned.</p>
-      </section>
-
       <section class="trades-section" aria-labelledby="trades-heading">
         <header class="section-heading section-heading--flat">
           <div>
@@ -209,6 +166,49 @@ watch([signalStatusFilter, signalSymbolFilter], () => { signalPage.value = 1; })
           </table>
           <p v-if="!visibleTrades.length" class="empty-line">No trades match this symbol.</p>
         </div>
+      </section>
+
+      <section class="failure-surface" aria-labelledby="failure-heading">
+        <header class="section-heading">
+          <div>
+            <p class="eyebrow">Risk review</p>
+            <h2 id="failure-heading">Stress periods</h2>
+          </div>
+          <span class="failure-count">{{ displayFailures.length }} {{ displayFailures.length === 1 ? "period" : "periods" }}</span>
+        </header>
+
+        <div v-if="store.failureLoading || store.failureEvidenceError" class="enrichment-state" role="status">
+          <template v-if="store.failureLoading">
+            <span class="enrichment-state__pulse" aria-hidden="true" />
+            <span>Updating period details…</span>
+          </template>
+          <template v-else>
+            <CircleAlert :size="14" aria-hidden="true" />
+            <span>Some period details are unavailable.</span>
+            <button type="button" :title="store.failureEvidenceError ?? undefined" @click="loadFailureDetails">Try again</button>
+          </template>
+        </div>
+        <div v-if="displayFailures.length" class="failure-list">
+          <button
+            v-for="(failure, index) in displayFailures"
+            :key="failure.id"
+            class="failure-row"
+            type="button"
+            @click="openFailure(failure, $event)"
+          >
+            <span class="failure-row__index">{{ String(index + 1).padStart(2, "0") }}</span>
+            <span class="failure-row__body">
+              <strong>{{ failure.title }}</strong>
+              <small>
+                <span>{{ failure.period }}</span>
+                <template v-if="isReported(failure.regime)"><i /><span>{{ failure.regime }}</span></template>
+              </small>
+            </span>
+            <span class="failure-row__change" :class="{ 'failure-row__change--missing': !isReported(failure.equityChange) }">{{ isReported(failure.equityChange) ? failure.equityChange : "—" }}</span>
+            <ChevronRight :size="16" aria-hidden="true" />
+          </button>
+        </div>
+        <p v-else class="empty-line">No failure periods were returned.</p>
       </section>
 
       <details class="assumptions signal-ledger">
@@ -317,11 +317,10 @@ watch([signalStatusFilter, signalSymbolFilter], () => { signalPage.value = 1; })
 
 .evidence-stack {
   display: flex;
-  width: min(100%, 1180px);
-  margin: 0 auto;
+  width: 100%;
   flex-direction: column;
-  gap: 72px;
-  padding: 18px 0 42px;
+  gap: 48px;
+  padding: 12px 0 48px;
 }
 
 .evidence-empty {
@@ -355,7 +354,7 @@ watch([signalStatusFilter, signalSymbolFilter], () => { signalPage.value = 1; })
   align-items: flex-start;
   justify-content: space-between;
   gap: 24px;
-  padding: 28px 30px 22px;
+  padding: 0 0 18px;
   color: #e7e7e7;
 }
 
@@ -366,10 +365,10 @@ watch([signalStatusFilter, signalSymbolFilter], () => { signalPage.value = 1; })
 .section-heading h2 {
   margin: 5px 0 0;
   color: #f3f3f3;
-  font-size: clamp(25px, 3vw, 38px);
-  font-weight: 540;
+  font-size: clamp(23px, 2.4vw, 31px);
+  font-weight: 560;
   line-height: 1;
-  letter-spacing: -.055em;
+  letter-spacing: -.045em;
 }
 
 .eyebrow {
@@ -387,14 +386,8 @@ watch([signalStatusFilter, signalSymbolFilter], () => { signalPage.value = 1; })
 }
 
 .failure-surface {
-  overflow: hidden;
-  border: 1px solid rgba(255, 255, 255, .11);
-  border-radius: 3px;
-  background: #101010;
-  box-shadow:
-    0 36px 92px rgba(0, 0, 0, .58),
-    0 8px 24px rgba(0, 0, 0, .34),
-    inset 0 1px rgba(255, 255, 255, .025);
+  border-block: 1px solid rgba(255, 255, 255, .1);
+  padding-block: 24px 4px;
 }
 
 .failure-list {
@@ -407,7 +400,7 @@ watch([signalStatusFilter, signalSymbolFilter], () => { signalPage.value = 1; })
   grid-template-columns: 38px minmax(0, 1fr) auto 18px;
   align-items: center;
   gap: 18px;
-  padding: 19px 30px;
+  padding: 18px 2px;
   border: 0;
   border-bottom: 1px solid rgba(255, 255, 255, .065);
   color: #777;
@@ -491,7 +484,7 @@ watch([signalStatusFilter, signalSymbolFilter], () => { signalPage.value = 1; })
   align-items: center;
   gap: 8px;
   margin: 0;
-  padding: 10px 30px;
+  padding: 10px 2px;
   border-top: 1px solid rgba(255, 255, 255, .07);
   color: #8d8d8d;
   background: rgba(255, 255, 255, .018);
@@ -524,7 +517,7 @@ watch([signalStatusFilter, signalSymbolFilter], () => { signalPage.value = 1; })
 
 .empty-line {
   margin: 0;
-  padding: 24px 30px;
+  padding: 24px 2px;
   color: #858585;
   font-size: 11px;
 }
@@ -571,6 +564,7 @@ watch([signalStatusFilter, signalSymbolFilter], () => { signalPage.value = 1; })
 .trade-table-wrap {
   overflow-x: auto;
   border-top: 1px solid rgba(255, 255, 255, .11);
+  scrollbar-color: #333 transparent;
 }
 
 .trade-table-wrap table {
@@ -590,8 +584,12 @@ watch([signalStatusFilter, signalSymbolFilter], () => { signalPage.value = 1; })
 .trade-column--view { width: 64px; }
 
 .trade-table-wrap th {
+  position: sticky;
+  z-index: 1;
+  top: 0;
   padding: 13px 14px;
   color: #838383;
+  background: #080808;
   font: 600 10px Inter, ui-sans-serif, system-ui, sans-serif;
   text-align: left;
   text-transform: none;
@@ -671,7 +669,7 @@ watch([signalStatusFilter, signalSymbolFilter], () => { signalPage.value = 1; })
   height: 32px;
   place-items: center;
   border: 1px solid #333;
-  border-radius: 6px;
+  border-radius: 8px;
   color: #b8b8b8;
   background: #111;
   cursor: pointer;
@@ -1066,14 +1064,14 @@ watch([signalStatusFilter, signalSymbolFilter], () => { signalPage.value = 1; })
 
 @media (max-width: 760px) {
   .evidence-stack {
-    gap: 52px;
+    gap: 40px;
     padding-top: 0;
   }
 
   .failure-row {
     grid-template-columns: 26px minmax(0, 1fr) auto;
     gap: 12px;
-    padding: 17px 19px;
+    padding: 17px 2px;
   }
 
   .failure-row > svg {
@@ -1081,7 +1079,7 @@ watch([signalStatusFilter, signalSymbolFilter], () => { signalPage.value = 1; })
   }
 
   .section-heading {
-    padding: 24px 20px 19px;
+    padding: 0 0 17px;
   }
 
   .section-heading--flat {
