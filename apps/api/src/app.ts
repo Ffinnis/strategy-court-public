@@ -58,6 +58,32 @@ export interface ApiApp {
   close(): Promise<void>;
 }
 
+interface DatabaseErrorLog {
+  name?: string;
+  message: string;
+  code?: string;
+  cause?: Omit<DatabaseErrorLog, "cause">;
+}
+
+function databaseErrorLog(error: unknown, includeCause = true): DatabaseErrorLog {
+  if (!error || typeof error !== "object") return { message: String(error) };
+
+  const issue = error as { cause?: unknown; code?: unknown; message?: unknown; name?: unknown };
+  const summary: DatabaseErrorLog = {
+    message: typeof issue.message === "string" ? issue.message : String(error),
+  };
+  if (typeof issue.name === "string" && issue.name !== "") summary.name = issue.name;
+  if (typeof issue.code === "string" && issue.code !== "") summary.code = issue.code;
+  if (includeCause && issue.cause !== undefined && issue.cause !== error) {
+    summary.cause = databaseErrorLog(issue.cause, false);
+  }
+  return summary;
+}
+
+export function logDatabasePoolError(error: unknown): void {
+  console.error("Strategy Court database pool lost an idle connection", JSON.stringify(databaseErrorLog(error)));
+}
+
 function actorFrom(request: Request): Actor {
   const actor = request.headers.get("x-actor")?.toLowerCase();
   return actor === "agent" ? "agent" : "user";
@@ -487,7 +513,7 @@ export async function createApp(options: AppOptions = {}): Promise<ApiApp> {
     connectionTimeoutMillis: 5_000,
   });
   if (ownsPool) {
-    pool.on("error", (error) => console.error("Strategy Court database pool lost an idle connection", error));
+    pool.on("error", logDatabasePoolError);
   }
   const auth = createAuth(pool, { trustedOrigins: allowedOrigins });
   if (options.migrate !== false) {

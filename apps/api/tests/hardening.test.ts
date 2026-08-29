@@ -1,13 +1,48 @@
-import { afterEach, describe, expect, test } from "bun:test";
+import { afterEach, describe, expect, spyOn, test } from "bun:test";
 import { ENGINE_VERSION } from "@strategy-court/domain";
 import { SAMPLE_STRATEGY } from "@strategy-court/schemas";
-import type { ApiApp } from "../src/app";
+import { logDatabasePoolError, type ApiApp } from "../src/app";
 import { AlpacaMarketProvider, FixtureMarketProvider } from "../src/providers/market";
 import { createTestHarness, TEST_USER_ID } from "./test-database";
 
 const harness = createTestHarness();
 
 afterEach(() => harness.cleanup());
+
+test("logs database pool errors without the client or socket graph", () => {
+  const cause = Object.assign(new Error("timeout exceeded when trying to connect"), {
+    code: "ETIMEDOUT",
+    socket: { writable: false },
+  });
+  const error = Object.assign(new Error("Connection terminated unexpectedly"), {
+    code: "08006",
+    cause,
+    client: { connection: { stream: { timeoutHandle: { delay: 5_000 } } } },
+  });
+  const errorSpy = spyOn(console, "error").mockImplementation(() => {});
+
+  try {
+    logDatabasePoolError(error);
+
+    expect(errorSpy).toHaveBeenCalledTimes(1);
+    expect(errorSpy.mock.calls[0]?.[0]).toBe("Strategy Court database pool lost an idle connection");
+    expect(JSON.parse(String(errorSpy.mock.calls[0]?.[1]))).toEqual({
+      name: "Error",
+      message: "Connection terminated unexpectedly",
+      code: "08006",
+      cause: {
+        name: "Error",
+        message: "timeout exceeded when trying to connect",
+        code: "ETIMEDOUT",
+      },
+    });
+    expect(String(errorSpy.mock.calls[0]?.[1])).not.toContain("client");
+    expect(String(errorSpy.mock.calls[0]?.[1])).not.toContain("socket");
+    expect(String(errorSpy.mock.calls[0]?.[1])).not.toContain("timeoutHandle");
+  } finally {
+    errorSpy.mockRestore();
+  }
+});
 
 const strategy = { ...structuredClone(SAMPLE_STRATEGY), universe: ["AAPL"] as ["AAPL"] };
 

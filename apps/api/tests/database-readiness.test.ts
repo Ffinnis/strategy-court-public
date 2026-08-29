@@ -37,6 +37,35 @@ test("does not retry a permanent database error", async () => {
   expect(isTransientDatabaseError({ code: "08006" })).toBe(true);
 });
 
+test("retries a wrapped connection timeout", async () => {
+  let attempts = 0;
+  const delays: number[] = [];
+  const database = {
+    async query() {
+      attempts += 1;
+      if (attempts === 1) {
+        const cause = new Error("timeout exceeded when trying to connect");
+        throw Object.assign(new Error("database connection failed"), { cause });
+      }
+      return {};
+    },
+  };
+
+  await waitForDatabase(database, [10], async (delayMs) => { delays.push(delayMs); });
+
+  expect(attempts).toBe(2);
+  expect(delays).toEqual([10]);
+  expect(isTransientDatabaseError(new Error("Connection terminated due to connection timeout"))).toBe(true);
+});
+
+test("handles cycles in chained database errors", () => {
+  const first = Object.assign(new Error("database connection failed"), { cause: undefined as unknown });
+  const second = Object.assign(new Error("another database connection failed"), { cause: first });
+  first.cause = second;
+
+  expect(isTransientDatabaseError(first)).toBe(false);
+});
+
 test("health reports unavailable until Postgres accepts queries", async () => {
   const database = await harness.createDatabase();
   const app = await harness.app({}, database);
