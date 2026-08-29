@@ -1,0 +1,19 @@
+services:
+  postgres:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_DB: strategy_court
+      POSTGRES_USER: strategy_court
+      POSTGRES_PASSWORD: strategy_court
+    ports:
+      - "5432:5432"
+    volumes:
+      - strategy-court-postgres:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U strategy_court -d strategy_court"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+
+volumes:
+  strategy-court-postgres:

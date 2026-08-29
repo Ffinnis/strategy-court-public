@@ -1,0 +1,12 @@
+.git
+.agents
+.env
+.env.*
+.DS_Store
+node_modules
+**/node_modules
+**/dist
+coverage
+playwright-report
+test-results
+output

@@ -1,0 +1,24 @@
+{
+  "name": "@strategy-court/api",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "dev": "bun --env-file=../../.env --watch src/index.ts",
+    "start": "bun --env-file=../../.env dist/index.js",
+    "build": "bun build src/index.ts --target=bun --outdir=dist",
+    "typecheck": "tsc --noEmit",
+    "test": "bun test tests",
+    "db:migrate": "bun --env-file=../../.env src/migrate.ts"
+  },
+  "dependencies": {
+    "@strategy-court/domain": "workspace:*",
+    "@strategy-court/fixtures": "workspace:*",
+    "@strategy-court/schemas": "workspace:*",
+    "better-auth": "^1.7.2",
+    "pg": "^8.23.0"
+  },
+  "devDependencies": {
+    "@types/pg": "^8.23.1"
+  }
+}

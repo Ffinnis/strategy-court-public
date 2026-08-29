@@ -1,0 +1,14 @@
+{
+  "extends": "../../tsconfig.json",
+  "compilerOptions": {
+    "rootDir": "../..",
+    "outDir": "dist",
+    "noEmit": true,
+    "paths": {
+      "@strategy-court/domain": ["../../packages/domain/src/index.ts"],
+      "@strategy-court/fixtures": ["../../packages/fixtures/src/index.ts"],
+      "@strategy-court/schemas": ["../../packages/schemas/src/index.ts"]
+    }
+  },
+  "include": ["src/**/*.ts", "tests/**/*.ts"]
+}
