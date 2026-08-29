@@ -1,7 +1,7 @@
 import type { Store } from "../store";
 import type { IndicatorRecord } from "../types";
 import { ApiError } from "../errors";
-import { BUILT_IN_INDICATORS } from "./catalog";
+import { EXECUTABLE_INDICATOR_IDS } from "@strategy-court/schemas";
 
 interface IndicatorInput {
   name: string;
@@ -21,7 +21,7 @@ export interface ResolvedStrategyDefinition {
   customIndicators: ResolvedCustomIndicator[];
 }
 
-const PRIMITIVES = new Set(["highest", "lowest", "rolling_average"]);
+const EXECUTABLE_INDICATORS = new Set<string>(EXECUTABLE_INDICATOR_IDS);
 
 function object(value: unknown): Record<string, unknown> | null {
   return value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : null;
@@ -62,7 +62,6 @@ export async function resolveCustomIndicatorsInStrategy(
   ownerUserId: string,
 ): Promise<ResolvedStrategyDefinition> {
   const stored = new Map((await store.listIndicators(ownerUserId)).map((row) => [row.id, row]));
-  const builtIns = new Set<string>(BUILT_IN_INDICATORS.map((item) => item.id));
   const references = new Map<string, ResolvedCustomIndicator>();
 
   const expand = (
@@ -83,7 +82,7 @@ export async function resolveCustomIndicatorsInStrategy(
 
     if (typeof node.indicator === "string") {
       const indicatorId = node.indicator;
-      if (builtIns.has(indicatorId) || PRIMITIVES.has(indicatorId)) {
+      if (EXECUTABLE_INDICATORS.has(indicatorId)) {
         return Object.fromEntries(Object.entries(node).map(([key, child]) => [key, key === "indicator" ? child : expand(child, bindings, stack)]));
       }
       const row = stored.get(indicatorId);

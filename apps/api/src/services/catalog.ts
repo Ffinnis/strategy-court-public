@@ -1,6 +1,9 @@
-import { BUILT_IN_INDICATOR_DEFINITIONS } from "@strategy-court/schemas";
+import {
+  BUILT_IN_INDICATOR_DEFINITIONS,
+  EXECUTABLE_INDICATOR_DEFINITIONS,
+} from "@strategy-court/schemas";
 
-export const BUILT_IN_INDICATORS = BUILT_IN_INDICATOR_DEFINITIONS.map((definition) => ({
+const publishedIndicator = (definition: (typeof EXECUTABLE_INDICATOR_DEFINITIONS)[number]) => ({
   id: definition.id,
   name: definition.name,
   category: definition.category,
@@ -13,4 +16,10 @@ export const BUILT_IN_INDICATORS = BUILT_IN_INDICATOR_DEFINITIONS.map((definitio
   components: definition.components,
   outputType: definition.outputType,
   version: definition.version,
-}));
+});
+
+export const BUILT_IN_INDICATORS = BUILT_IN_INDICATOR_DEFINITIONS.map(publishedIndicator);
+
+export const FORMULA_PRIMITIVES = EXECUTABLE_INDICATOR_DEFINITIONS
+  .filter((definition) => !definition.catalog)
+  .map(publishedIndicator);

@@ -23,7 +23,7 @@ import { ApiError, errorResponse, requireObject } from "./errors";
 import { waitForDatabase } from "./database-readiness";
 import { SequentialQueue } from "./jobs/sequential-queue";
 import { selectMarketProvider, snapshotForDomain, type MarketProvider } from "./providers/market";
-import { BUILT_IN_INDICATORS } from "./services/catalog";
+import { BUILT_IN_INDICATORS, FORMULA_PRIMITIVES } from "./services/catalog";
 import { executeCourt, type CourtExecutionInput } from "./services/court";
 import { validateIndicatorDefinition } from "./services/indicator";
 import { resolveCustomIndicatorsInStrategy } from "./services/indicator-runtime";
@@ -636,7 +636,10 @@ export async function createApp(options: AppOptions = {}): Promise<ApiApp> {
           available: true,
           custom: true,
         })) : [];
-        return json({ indicators: [...BUILT_IN_INDICATORS, ...custom] }, 200, headers);
+        return json({
+          indicators: [...BUILT_IN_INDICATORS, ...custom],
+          formulaPrimitives: FORMULA_PRIMITIVES,
+        }, 200, headers);
       }
 
       if (!ownerUserId) {
@@ -742,8 +745,9 @@ export async function createApp(options: AppOptions = {}): Promise<ApiApp> {
 
       const indicatorMatch = path.match(/^\/api\/indicators\/([^/]+)$/);
       if (request.method === "GET" && indicatorMatch) {
-        const builtIn = BUILT_IN_INDICATORS.find((item) => item.id === indicatorMatch[1]);
-        if (builtIn) return json({ indicator: builtIn }, 200, headers);
+        const executable = [...BUILT_IN_INDICATORS, ...FORMULA_PRIMITIVES]
+          .find((item) => item.id === indicatorMatch[1]);
+        if (executable) return json({ indicator: executable }, 200, headers);
         const row = await store.getIndicator(indicatorMatch[1]!, ownerUserId);
         if (!row) throw new ApiError(404, "indicator_not_found", "Indicator not found");
         return json({ indicator: {

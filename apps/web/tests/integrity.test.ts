@@ -5,7 +5,7 @@ import { createPinia, setActivePinia } from "pinia";
 import { normalizeCase, normalizeFailure, normalizeMonitoringResponse, normalizeRun, useCourtStore } from "../src/stores/court";
 import { transformAgentFormula, useWebMcp, webMcpSchemaContract } from "../src/webmcp/useWebMcp";
 import { trappedFocusTarget } from "../src/services/focusTrap";
-import { BUILT_IN_INDICATOR_IDS, EXECUTABLE_INDICATOR_DEFINITIONS } from "@strategy-court/schemas";
+import { EXECUTABLE_INDICATOR_IDS, safeParseStrategyDefinition } from "@strategy-court/schemas";
 import { ref } from "vue";
 
 const originalFetch = globalThis.fetch;
@@ -233,7 +233,12 @@ describe("connected-state integrity", () => {
     };
     store.currentCase = normalizeCase(casePayload);
     const registered = new Map<string, ModelContextTool>();
-    const context = { registerTool: async (tool: ModelContextTool) => { registered.set(tool.name, tool); } } as ModelContext;
+    const context = {
+      registerTool: async (tool: ModelContextTool, options?: { signal?: AbortSignal }) => {
+        registered.set(tool.name, tool);
+        options?.signal?.addEventListener("abort", () => registered.delete(tool.name), { once: true });
+      },
+    } as ModelContext;
     Object.defineProperty(globalThis, "document", { configurable: true, value: { modelContext: context } });
     const enabled = ref(true);
     useWebMcp(enabled);
@@ -247,6 +252,7 @@ describe("connected-state integrity", () => {
     casePayload.versions[0]!.confirmedAt = "2026-08-28T10:00:00.000Z";
     await new Promise((resolve) => setTimeout(resolve, 0));
     expect(registered.has("get_monitoring_status")).toBe(false);
+    expect(registered.has("create_strategy_draft")).toBe(false);
     expect(registered.has("run_court")).toBe(true);
     const runCourtSchema = registered.get("run_court")!.inputSchema as { required: string[]; properties: Record<string, { default?: unknown }> };
     expect(runCourtSchema.required).not.toContain("dataSnapshotPolicy");
@@ -297,12 +303,14 @@ describe("connected-state integrity", () => {
     for (const expected of ["inspect_failure_period", "create_strategy_variants", "compare_strategy_versions", "start_replay_probation", "export_case_report"]) {
       expect(registered.has(expected)).toBe(true);
     }
+    expect(new TextEncoder().encode(JSON.stringify([...registered.values()])).byteLength).toBeLessThan(65_536);
 
     store.currentCase!.replays.unshift({
       id: "replay-1", versionId: "v1", status: "active", currentDate: "2025-01-03", startDate: "2025-01-02", endDate: "2025-12-31",
       progress: 1, regime: "Unknown", metrics: [], comparisons: [], signals: [], positions: [], trades: [], newTrades: [], warnings: [],
     });
     await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(new TextEncoder().encode(JSON.stringify([...registered.values()])).byteLength).toBeLessThan(65_536);
     const tool = registered.get("get_monitoring_status");
     expect(tool).toBeDefined();
     expect(tool?.inputSchema).toMatchObject({
@@ -361,12 +369,10 @@ describe("connected-state integrity", () => {
     };
     walk(webMcpSchemaContract);
     const formulaBranches = webMcpSchemaContract.formula.oneOf as Array<Record<string, unknown>>;
-    expect(formulaBranches.length).toBe(EXECUTABLE_INDICATOR_DEFINITIONS.length + 11);
-    const exposedIndicators = formulaBranches.flatMap((branch) => {
-      const indicator = (branch.properties as Record<string, Record<string, unknown>> | undefined)?.indicator;
-      return typeof indicator?.const === "string" ? [indicator.const] : [];
-    });
-    expect(exposedIndicators).toEqual(expect.arrayContaining([...BUILT_IN_INDICATOR_IDS]));
+    expect(formulaBranches).toHaveLength(11);
+    const indicatorBranch = formulaBranches.find((branch) => "indicator" in ((branch.properties ?? {}) as Record<string, unknown>));
+    const indicatorIdBranches = ((indicatorBranch?.properties as Record<string, Record<string, unknown>>).indicator.oneOf as Array<Record<string, unknown>>);
+    expect(indicatorIdBranches[0]?.enum).toEqual([...EXECUTABLE_INDICATOR_IDS]);
     expect((webMcpSchemaContract.condition.oneOf as unknown[]).length).toBe(5);
     const definition = webMcpSchemaContract.definition as Record<string, unknown>;
     const properties = definition.properties as Record<string, Record<string, unknown>>;
@@ -421,7 +427,9 @@ describe("connected-state integrity", () => {
     expect(((constantBranch?.properties as Record<string, Record<string, unknown>>).constant).maximum).toBe(1e12);
     const strategyBranches = webMcpSchemaContract.valueExpression.oneOf as Array<Record<string, unknown>>;
     const customStrategyBranch = strategyBranches.find((branch) => "arguments" in ((branch.properties ?? {}) as Record<string, unknown>));
-    expect(((customStrategyBranch?.properties as Record<string, Record<string, unknown>>).indicator).pattern).toContain("[0-9a-fA-F]{8}");
+    const strategyIndicatorBranches = ((customStrategyBranch?.properties as Record<string, Record<string, unknown>>).indicator.oneOf as Array<Record<string, unknown>>);
+    expect(strategyIndicatorBranches[0]?.enum).toEqual([...EXECUTABLE_INDICATOR_IDS]);
+    expect(strategyIndicatorBranches[1]?.pattern).toContain("[0-9a-fA-F]{8}");
     const conditionBranches = webMcpSchemaContract.condition.oneOf as Array<Record<string, unknown>>;
     const customConditionBranch = conditionBranches.find((branch) => "arguments" in ((branch.properties ?? {}) as Record<string, unknown>));
     expect(((customConditionBranch?.properties as Record<string, Record<string, unknown>>).indicator).pattern).toContain("[0-9a-fA-F]{8}");
@@ -429,6 +437,35 @@ describe("connected-state integrity", () => {
     expect(transformAgentFormula([{ structuredPatch: { entry: { indicator: "stored-boolean", arguments: [{ name: "threshold", value: 30 }] } } }])).toEqual([
       { structuredPatch: { entry: { indicator: "stored-boolean", parameters: { threshold: 30 } } } },
     ]);
-    expect(() => transformAgentFormula({ indicator: "stored-custom", arguments: [{ name: "period", value: 10 }, { name: "period", value: 20 }] })).toThrow("Duplicate custom indicator argument period");
+    expect(() => transformAgentFormula({ indicator: "stored-custom", arguments: [{ name: "period", value: 10 }, { name: "period", value: 20 }] })).toThrow("Duplicate indicator argument period");
+  });
+
+  test("compound SMA and percentage-change rules survive the compact WebMCP transform", () => {
+    const definition = transformAgentFormula({
+      name: "QQQ long-term dislocation",
+      universe: ["QQQ"],
+      timeframe: "1d",
+      direction: "long",
+      entry: {
+        any: [
+          { left: { source: "close" }, operator: "gt", right: { indicator: "sma", arguments: [{ name: "period", value: 120 }, { name: "source", value: "close" }] } },
+          { left: { indicator: "percentage_change", arguments: [{ name: "period", value: 30 }, { name: "source", value: "close" }] }, operator: "lt", right: { constant: -30 } },
+        ],
+      },
+      exit: {
+        any: [
+          { left: { source: "close" }, operator: "lt", right: { indicator: "sma", arguments: [{ name: "period", value: 120 }, { name: "source", value: "close" }] } },
+          { left: { indicator: "percentage_change", arguments: [{ name: "period", value: 30 }, { name: "source", value: "close" }] }, operator: "gt", right: { constant: 30 } },
+        ],
+      },
+      execution: { signalAt: "close", executeAt: "next_open", orderType: "market" },
+      risk: {},
+      costs: { commissionBpsPerSide: 0, slippageBpsPerSide: 5 },
+    });
+    expect(safeParseStrategyDefinition(definition)).toMatchObject({ success: true });
+    expect(definition).toMatchObject({
+      entry: { any: [{}, { left: { indicator: "percentage_change", parameters: { period: 30, source: "close" } } }] },
+      exit: { any: [{}, { left: { indicator: "percentage_change", parameters: { period: 30, source: "close" } } }] },
+    });
   });
 });

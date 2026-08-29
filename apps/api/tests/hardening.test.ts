@@ -217,6 +217,102 @@ describe("Stage C verifier regressions", () => {
     }
   });
 
+  test("accepts an OR strategy with a moving average and percentage change", async () => {
+    const app = await harness.app({ courtExecutor: courtResult });
+    const created = await request(app, "POST", "/api/cases", {
+      name: "Long-term trend or pullback",
+      symbols: ["AAPL"],
+      dateFrom: "2020-01-02",
+      dateTo: "2024-12-31",
+      initialCapital: 10_000,
+    });
+    const definition = structuredClone(strategy);
+    definition.entry = {
+      any: [
+        {
+          left: { source: "close" },
+          operator: "gt",
+          right: { indicator: "sma", parameters: { period: 120, source: "close" } },
+        },
+        {
+          left: { indicator: "percentage_change", parameters: { period: 30, source: "close" } },
+          operator: "lt",
+          right: { constant: -30 },
+        },
+      ],
+    };
+    definition.exit = {
+      any: [
+        {
+          left: { source: "close" },
+          operator: "lt",
+          right: { indicator: "sma", parameters: { period: 120, source: "close" } },
+        },
+        {
+          left: { indicator: "percentage_change", parameters: { period: 30, source: "close" } },
+          operator: "gt",
+          right: { constant: 30 },
+        },
+      ],
+    };
+
+    const draft = await request(app, "POST", `/api/cases/${created.body.case.id}/strategy-drafts`, {
+      definition,
+      interpretation: "Buy above the 120-day average or after a 30-day decline greater than 30 percent.",
+    }, "agent");
+
+    expect(draft.response.status).toBe(201);
+    expect(draft.body.version.definition.entry).toEqual(definition.entry);
+    expect(draft.body.version.definition.exit).toEqual(definition.exit);
+  });
+
+  test("accepts percentage change and rolling sum as custom-indicator dependencies", async () => {
+    const app = await harness.app({ courtExecutor: courtResult });
+    const created = await request(app, "POST", "/api/indicators", {
+      name: "Pullback with rolling price",
+      description: "Combines a percentage change with a scaled rolling price sum.",
+      inputs: [{ name: "scale", type: "number", default: 1, min: 0, max: 10 }],
+      dependencies: ["percentage_change", "rolling_sum"],
+      outputType: "number",
+      sharingState: "private",
+      formula: {
+        operation: "add",
+        left: { indicator: "percentage_change", parameters: { period: 30, source: "close" } },
+        right: {
+          operation: "multiply",
+          left: { indicator: "rolling_sum", parameters: { period: 30, source: "close" } },
+          right: { input: "scale" },
+        },
+      },
+    }, "agent");
+
+    expect(created.response.status).toBe(201);
+    expect(created.body.indicator.dependencies).toEqual(["percentage_change", "rolling_sum"]);
+  });
+
+  test("publishes formula primitives separately and supports direct inspection", async () => {
+    const app = await harness.app({ courtExecutor: courtResult });
+    const catalog = await request(app, "GET", "/api/indicators");
+
+    expect(catalog.response.status).toBe(200);
+    expect(catalog.body.formulaPrimitives.map((indicator: Record<string, unknown>) => indicator.id)).toEqual([
+      "highest",
+      "lowest",
+      "rolling_sum",
+      "rolling_average",
+      "percentage_change",
+    ]);
+    expect(catalog.body.indicators.some((indicator: Record<string, unknown>) => indicator.id === "percentage_change")).toBe(false);
+
+    const primitive = await request(app, "GET", "/api/indicators/percentage_change");
+    expect(primitive.response.status).toBe(200);
+    expect(primitive.body.indicator).toMatchObject({
+      id: "percentage_change",
+      category: "primitive",
+      requiredParameters: ["period", "source"],
+    });
+  });
+
   test("enforces custom-indicator inputs, dependencies, operations, output, and sharing enums", async () => {
     const app = await harness.app({ courtExecutor: courtResult });
     const valid = {

@@ -1,14 +1,16 @@
 import { ApiError, requireObject } from "../errors";
 import type { Store } from "../store";
-import { BUILT_IN_INDICATORS } from "./catalog";
-import { validateIndicatorParameters } from "@strategy-court/schemas";
+import {
+  EXECUTABLE_INDICATOR_IDS,
+  validateIndicatorParameters,
+} from "@strategy-court/schemas";
 
 const PRICE_SOURCES = new Set(["open", "high", "low", "close", "volume", "hl2", "hlc3", "ohlc4"]);
 const COMPARISONS = new Set(["gt", "gte", "lt", "lte", "eq", "crosses_above", "crosses_below"]);
 const OPERATIONS = new Set(["add", "subtract", "multiply", "divide", "min", "max"]);
 const OUTPUT_TYPES = new Set(["number", "boolean"]);
 const SHARING_STATES = new Set(["private", "unlisted"]);
-const PRIMITIVE_INDICATORS = ["highest", "lowest", "rolling_average"];
+const EXECUTABLE_INDICATORS = new Set<string>(EXECUTABLE_INDICATOR_IDS);
 
 interface IndicatorInput {
   name: string;
@@ -88,8 +90,6 @@ export async function validateIndicatorDefinition(
   const inputs = validateInputs(input.inputs);
   const inputNames = new Set(inputs.map((item) => item.name));
   const dependencies = dependencyIds(input.dependencies);
-  const availableBuiltIns = BUILT_IN_INDICATORS.filter((item) => item.available).map((item) => item.id);
-  const known = new Set<string>([...availableBuiltIns, ...PRIMITIVE_INDICATORS]);
   const storedIndicators = new Map((await store.listIndicators(ownerUserId)).map((indicator) => [indicator.id, indicator]));
   if (!OUTPUT_TYPES.has(String(input.outputType))) throw new ApiError(422, "invalid_indicator_output", "outputType must be number or boolean");
   const sharingState = input.sharingState === undefined ? "private" : String(input.sharingState);
@@ -100,7 +100,7 @@ export async function validateIndicatorDefinition(
   const resolveIndicator = (indicatorId: string): ResolvedIndicator => {
     const cached = resolved.get(indicatorId);
     if (cached) return cached;
-    if (known.has(indicatorId)) {
+    if (EXECUTABLE_INDICATORS.has(indicatorId)) {
       const builtIn: ResolvedIndicator = { outputType: "number", inputs: [], custom: false };
       resolved.set(indicatorId, builtIn);
       return builtIn;

@@ -1,5 +1,5 @@
 import {
-  EXECUTABLE_INDICATOR_DEFINITIONS,
+  EXECUTABLE_INDICATOR_IDS,
   PRICE_SOURCES,
   courtRunRequestJsonSchema,
   replayAdvanceJsonSchema,
@@ -33,7 +33,6 @@ const cloneObjectSchema = (schema: unknown): ObjectSchema => structuredClone(sch
 
 const sharedStrategy = cloneObjectSchema(strategyDefinitionJsonSchema);
 const sharedStrategyDefs = sharedStrategy.$defs!;
-const valueExpression = sharedStrategyDefs.value!;
 const condition = sharedStrategyDefs.condition!;
 const { $schema: _strategyDialect, $defs: _nestedStrategyDefs, ...strategyShape } = sharedStrategy;
 const definition: Schema = {
@@ -52,9 +51,6 @@ const definition: Schema = {
     costs: described(sharedStrategy.properties.costs!, "Commission and slippage assumptions in basis points per side."),
   },
 };
-const strategyDefs: Record<string, Schema> = { ...sharedStrategyDefs, definition };
-const withStrategy = (schema: Schema): Schema => ({ ...schema, $defs: strategyDefs });
-
 const sharedRun = cloneObjectSchema(courtRunRequestJsonSchema);
 const sharedDateRange = sharedRun.properties.dateRange as ObjectSchema;
 const date = described(sharedDateRange.properties.start!, "Calendar date in YYYY-MM-DD format. Must match the active case range.");
@@ -87,20 +83,49 @@ const customIndicatorId = described({
   type: "string",
   pattern: "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$",
 }, "Owner-scoped custom indicator ID returned by list_indicator_catalog or create_custom_indicator.");
+const catalogIndicatorId = described(oneOf(
+  { type: "string", enum: [...EXECUTABLE_INDICATOR_IDS] },
+  customIndicatorId,
+), "Built-in or owner-scoped indicator ID returned by list_indicator_catalog.");
+const argumentName = described({ type: "string", pattern: "^[A-Za-z][A-Za-z0-9_]{0,39}$" }, "Parameter name from list_indicator_catalog.");
+const indicatorCall = (indicator: Schema, valueRef: string): Schema => object({
+  indicator,
+  arguments: {
+    type: "array",
+    maxItems: 20,
+    items: object({ name: argumentName, value: { $ref: valueRef } }, ["name", "value"]),
+    description: "Named parameter values from list_indicator_catalog. Use an empty array when the indicator has no parameters.",
+  },
+}, ["indicator", "arguments"]);
 
-const catalogParameterSchema = (parameter: (typeof EXECUTABLE_INDICATOR_DEFINITIONS)[number]["parameters"][number]): Schema => {
-  if (parameter.type === "integer") return { type: "integer", minimum: parameter.min, maximum: parameter.max };
-  if (parameter.type === "number") return { type: "number", minimum: parameter.min, maximum: parameter.max };
-  return { type: "string", enum: [...(parameter.options ?? [])] };
+const strategyArgument = oneOf(
+  { type: "number", minimum: -1e12, maximum: 1e12 },
+  { type: "boolean" },
+  { type: "string", minLength: 1, maxLength: 64 },
+  { $ref: "#/$defs/value" },
+);
+const agentValueExpression = oneOf(
+  object({ constant: { type: "number", minimum: -1e12, maximum: 1e12 } }, ["constant"]),
+  object({ source }, ["source"]),
+  indicatorCall(catalogIndicatorId, "#/$defs/argument"),
+  object({ lag: object({ value: { $ref: "#/$defs/value" }, bars: { type: "integer", minimum: 0, maximum: 2520 } }, ["value", "bars"]) }, ["lag"]),
+  object({ operation: { enum: ["add", "subtract", "multiply", "divide", "min", "max"] }, left: { $ref: "#/$defs/value" }, right: { $ref: "#/$defs/value" } }, ["operation", "left", "right"]),
+  object({ absolute: { $ref: "#/$defs/value" } }, ["absolute"]),
+);
+const agentCondition = oneOf(
+  object({ all: { type: "array", minItems: 1, maxItems: 5, items: { $ref: "#/$defs/condition" } } }, ["all"]),
+  object({ any: { type: "array", minItems: 1, maxItems: 5, items: { $ref: "#/$defs/condition" } } }, ["any"]),
+  object({ not: { $ref: "#/$defs/condition" } }, ["not"]),
+  object({ left: { $ref: "#/$defs/value" }, operator: comparisonOperator, right: { $ref: "#/$defs/value" } }, ["left", "operator", "right"]),
+  indicatorCall(customIndicatorId, "#/$defs/argument"),
+);
+const strategyDefs: Record<string, Schema> = {
+  definition,
+  value: agentValueExpression,
+  condition: agentCondition,
+  argument: strategyArgument,
 };
-
-const catalogFormulaBranches = EXECUTABLE_INDICATOR_DEFINITIONS.map((indicator) => object({
-  indicator: described({ const: indicator.id }, indicator.name),
-  parameters: object(
-    Object.fromEntries(indicator.parameters.map((parameter) => [parameter.name, described(catalogParameterSchema(parameter), parameter.label)])),
-    indicator.parameters.filter((parameter) => parameter.required).map((parameter) => parameter.name),
-  ),
-}, ["indicator", "parameters"]));
+const withStrategy = (schema: Schema): Schema => ({ ...schema, $defs: strategyDefs });
 
 const indicatorInput = oneOf(
   object({ name: described({ type: "string", pattern: "^[A-Za-z][A-Za-z0-9_]{0,39}$" }, "Stable input name used by the formula."), type: { const: "number" }, default: { type: "number" }, min: { type: "number" }, max: { type: "number" }, description: { type: "string", maxLength: 500 } }, ["name", "type", "default"]),
@@ -115,13 +140,17 @@ const formula = oneOf(
   object({ constant: { type: "number", minimum: -1e12, maximum: 1e12 } }, ["constant"]),
   object({ source }, ["source"]),
   object({ input: { type: "string", pattern: "^[A-Za-z][A-Za-z0-9_]{0,39}$" } }, ["input"]),
-  ...catalogFormulaBranches,
-  object({ indicator: customIndicatorId, arguments: { type: "array", maxItems: 20, items: object({ name: { type: "string", pattern: "^[A-Za-z][A-Za-z0-9_]{0,39}$" }, value: { $ref: "#/$defs/formulaArgument" } }, ["name", "value"]) } }, ["indicator", "arguments"]),
+  indicatorCall(catalogIndicatorId, "#/$defs/formulaArgument"),
   object({ lag: object({ value: { $ref: "#/$defs/formula" }, bars: { type: "integer", minimum: 0, maximum: 2520 } }, ["value", "bars"]) }, ["lag"]),
   object({ operation: { type: "string", enum: ["add", "subtract", "multiply", "divide", "min", "max"] }, left: { $ref: "#/$defs/formula" }, right: { $ref: "#/$defs/formula" } }, ["operation", "left", "right"]),
   object({ absolute: { $ref: "#/$defs/formula" } }, ["absolute"]),
 );
-const formulaArgument = oneOf({ type: "number", minimum: -1e12, maximum: 1e12 }, { type: "boolean" }, source, { $ref: "#/$defs/formula" });
+const formulaArgument = oneOf(
+  { type: "number", minimum: -1e12, maximum: 1e12 },
+  { type: "boolean" },
+  { type: "string", minLength: 1, maxLength: 64 },
+  { $ref: "#/$defs/formula" },
+);
 const indicatorDependencies: Schema = {
   type: "array",
   maxItems: 20,
@@ -129,38 +158,6 @@ const indicatorDependencies: Schema = {
   items: id,
   description: "All built-in or owner-scoped custom indicator IDs referenced anywhere in the formula.",
 };
-const customStrategyArgument = oneOf(
-  { type: "number", minimum: -1e12, maximum: 1e12 },
-  { type: "boolean" },
-  source,
-  { $ref: "#/$defs/value" },
-);
-const customStrategyValue = object({
-  indicator: customIndicatorId,
-  arguments: {
-    type: "array",
-    maxItems: 20,
-    items: object({
-      name: { type: "string", pattern: "^[A-Za-z][A-Za-z0-9_]{0,39}$" },
-      value: { $ref: "#/$defs/customStrategyArgument" },
-    }, ["name", "value"]),
-  },
-}, ["indicator", "arguments"]);
-const agentValueExpression: Schema = {
-  ...valueExpression,
-  oneOf: [...(valueExpression.oneOf as Schema[]), customStrategyValue],
-};
-const agentCondition: Schema = {
-  ...condition,
-  oneOf: [...(condition.oneOf as Schema[]), customStrategyValue],
-};
-sharedStrategyDefs.value = agentValueExpression;
-sharedStrategyDefs.condition = agentCondition;
-sharedStrategyDefs.customStrategyArgument = customStrategyArgument;
-strategyDefs.value = agentValueExpression;
-strategyDefs.condition = agentCondition;
-strategyDefs.customStrategyArgument = customStrategyArgument;
-
 export const webMcpSchemaContract = {
   definition,
   condition: agentCondition,
@@ -179,11 +176,11 @@ export function transformAgentFormula(value: unknown): unknown {
   if (typeof node.indicator === "string" && Array.isArray(node.arguments)) {
     const parameters: Record<string, unknown> = {};
     for (const argumentValue of node.arguments) {
-      if (!argumentValue || typeof argumentValue !== "object" || Array.isArray(argumentValue)) throw new Error("Every custom indicator argument must be a name/value object.");
+      if (!argumentValue || typeof argumentValue !== "object" || Array.isArray(argumentValue)) throw new Error("Every indicator argument must be a name/value object.");
       const argument = argumentValue as Record<string, unknown>;
       const name = String(argument.name ?? "");
-      if (!/^[A-Za-z][A-Za-z0-9_]{0,39}$/.test(name)) throw new Error(`Custom indicator argument name ${name || "(empty)"} is invalid.`);
-      if (Object.hasOwn(parameters, name)) throw new Error(`Duplicate custom indicator argument ${name}.`);
+      if (!/^[A-Za-z][A-Za-z0-9_]{0,39}$/.test(name)) throw new Error(`Indicator argument name ${name || "(empty)"} is invalid.`);
+      if (Object.hasOwn(parameters, name)) throw new Error(`Duplicate indicator argument ${name}.`);
       parameters[name] = transformAgentFormula(argument.value);
     }
     return { indicator: node.indicator, parameters };
@@ -306,7 +303,7 @@ export function useWebMcp(enabled: Readonly<Ref<boolean>> = ref(true)): DeepRead
       {
         name: "create_strategy_draft",
         title: "Create strategy draft",
-        description: "Create a new unconfirmed structured strategy draft for the active case. Use this after interpreting the user's natural-language rules; the user must still review and confirm the result.",
+        description: "Create a new unconfirmed structured strategy draft for the active case. Call list_indicator_catalog first and pass each indicator's named parameters as an arguments array. The user must still review and confirm the result.",
         inputSchema: withStrategy(object({
           caseId,
           definition: { $ref: "#/$defs/definition", description: "Strict deterministic strategy definition derived from the user's stated rules." },
@@ -327,7 +324,7 @@ export function useWebMcp(enabled: Readonly<Ref<boolean>> = ref(true)): DeepRead
       {
         name: "create_custom_indicator",
         title: "Create custom indicator",
-        description: "Create a reusable safe formula-tree indicator. Use this only when the built-in catalog cannot express the user's rule.",
+        description: "Create a reusable safe formula-tree indicator. Call list_indicator_catalog first and pass indicator parameters as named arguments. Use this only when the built-in catalog cannot express the user's rule.",
         inputSchema: {
           ...object({
             name: { type: "string", minLength: 1, maxLength: 120, description: "Indicator name shown in Strategy Court." },
@@ -355,39 +352,43 @@ export function useWebMcp(enabled: Readonly<Ref<boolean>> = ref(true)): DeepRead
       },
     ];
 
-    if (store.confirmed) result.push({
-      name: "run_court",
-      title: "Run Court",
-      description: "Run all configured robustness tests for the active confirmed strategy version and its locked case range.",
-      inputSchema: object({
-        caseId,
-        strategyVersionId: described(sharedRun.properties.strategyVersionId!, "Confirmed active strategy version ID."),
-        startDate: date,
-        endDate: date,
-        courtProfile: described(sharedRun.properties.courtProfile!, "Court test profile. The MVP supports balanced."),
-        dataSnapshotPolicy: {
-          ...described(sharedRun.properties.dataSnapshotPolicy!, "Omit to use live Alpaca data. Use prefer_cache for cached data or frozen for an explicit reproducible fixture run."),
-          default: "refresh",
-        },
-      }, ["caseId", "strategyVersionId", "startDate", "endDate", "courtProfile"]),
-      annotations: { readOnlyHint: false, untrustedContentHint: false },
-      execute: execute(async (input, signal) => {
-        const current = visibleCase(input);
-        if (input.strategyVersionId !== store.activeVersion?.id) throw new Error("Use the active confirmed strategyVersionId returned by get_case_context.");
-        if (input.startDate !== current.startDate || input.endDate !== current.endDate) throw new Error(`Use the locked case range ${current.startDate} through ${current.endDate}.`);
-        const runId = await store.runCourt(input.dataSnapshotPolicy as DataSnapshotPolicy | undefined, "balanced", "agent", signal);
-        if (!runId) throw new Error(store.error ?? "Court did not create a completed run.");
-        const run = store.currentCase?.runs.find((item) => item.id === runId);
-        return state(`Court run ${runId} completed. Call get_case_context, then inspect the weakest returned verdict.`, {
-          changedRunId: runId,
-          runId,
-          runState: run?.status ?? "completed",
-          progress: run?.progress ?? 100,
-          dataSnapshotId: run?.dataSnapshotId ?? null,
-          summaryLabel: run?.result?.summaryLabel ?? null,
-        }, [runId]);
-      }),
-    });
+    if (store.confirmed) {
+      const draftIndex = result.findIndex((tool) => tool.name === "create_strategy_draft");
+      if (draftIndex >= 0) result.splice(draftIndex, 1);
+      result.push({
+        name: "run_court",
+        title: "Run Court",
+        description: "Run all configured robustness tests for the active confirmed strategy version and its locked case range.",
+        inputSchema: object({
+          caseId,
+          strategyVersionId: described(sharedRun.properties.strategyVersionId!, "Confirmed active strategy version ID."),
+          startDate: date,
+          endDate: date,
+          courtProfile: described(sharedRun.properties.courtProfile!, "Court test profile. The MVP supports balanced."),
+          dataSnapshotPolicy: {
+            ...described(sharedRun.properties.dataSnapshotPolicy!, "Omit to use live Alpaca data. Use prefer_cache for cached data or frozen for an explicit reproducible fixture run."),
+            default: "refresh",
+          },
+        }, ["caseId", "strategyVersionId", "startDate", "endDate", "courtProfile"]),
+        annotations: { readOnlyHint: false, untrustedContentHint: false },
+        execute: execute(async (input, signal) => {
+          const current = visibleCase(input);
+          if (input.strategyVersionId !== store.activeVersion?.id) throw new Error("Use the active confirmed strategyVersionId returned by get_case_context.");
+          if (input.startDate !== current.startDate || input.endDate !== current.endDate) throw new Error(`Use the locked case range ${current.startDate} through ${current.endDate}.`);
+          const runId = await store.runCourt(input.dataSnapshotPolicy as DataSnapshotPolicy | undefined, "balanced", "agent", signal);
+          if (!runId) throw new Error(store.error ?? "Court did not create a completed run.");
+          const run = store.currentCase?.runs.find((item) => item.id === runId);
+          return state(`Court run ${runId} completed. Call get_case_context, then inspect the weakest returned verdict.`, {
+            changedRunId: runId,
+            runId,
+            runState: run?.status ?? "completed",
+            progress: run?.progress ?? 100,
+            dataSnapshotId: run?.dataSnapshotId ?? null,
+            summaryLabel: run?.result?.summaryLabel ?? null,
+          }, [runId]);
+        }),
+      });
+    }
 
     if (store.courtComplete) result.push(
       {
