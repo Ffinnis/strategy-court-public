@@ -20,6 +20,7 @@ import { getMigrations } from "better-auth/db/migration";
 import { Pool } from "pg";
 import { createAuth, type StrategyCourtAuth } from "./auth";
 import { ApiError, errorResponse, requireObject } from "./errors";
+import { waitForDatabase } from "./database-readiness";
 import { SequentialQueue } from "./jobs/sequential-queue";
 import { selectMarketProvider, snapshotForDomain, type MarketProvider } from "./providers/market";
 import { BUILT_IN_INDICATORS } from "./services/catalog";
@@ -79,6 +80,14 @@ function corsHeaders(request: Request, allowedOrigins: string[]): Headers {
 function json(value: unknown, status: number, headers: Headers): Response {
   headers.set("content-type", "application/json; charset=utf-8");
   return new Response(JSON.stringify(value), { status, headers });
+}
+
+function databaseUnavailable(headers: Headers): Response {
+  headers.set("retry-after", "5");
+  return json({
+    code: "AUTH_SERVICE_UNAVAILABLE",
+    message: "The account service is warming up. Try again in a moment.",
+  }, 503, headers);
 }
 
 function jsonDownload(value: unknown, filename: string, headers: Headers): Response {
@@ -472,12 +481,17 @@ async function inspectFailure(store: Store, run: CourtRunRecord, failureValue: u
 
 export async function createApp(options: AppOptions = {}): Promise<ApiApp> {
   const allowedOrigins = options.allowedOrigins ?? (process.env.CORS_ORIGINS?.split(",").map((item) => item.trim()).filter(Boolean) || DEFAULT_ORIGINS);
+  const ownsPool = !options.pool;
   const pool = options.pool ?? new Pool({
     connectionString: options.databaseUrl ?? process.env.DATABASE_URL ?? "postgresql://strategy_court:strategy_court@localhost/strategy_court",
+    connectionTimeoutMillis: 5_000,
   });
-  const ownsPool = !options.pool;
+  if (ownsPool) {
+    pool.on("error", (error) => console.error("Strategy Court database pool lost an idle connection", error));
+  }
   const auth = createAuth(pool, { trustedOrigins: allowedOrigins });
   if (options.migrate !== false) {
+    await waitForDatabase(pool);
     const authMigrations = await getMigrations(auth.options);
     await authMigrations.runMigrations();
   }
@@ -556,10 +570,21 @@ export async function createApp(options: AppOptions = {}): Promise<ApiApp> {
 
     try {
       if (path.startsWith("/api/auth")) {
+        try {
+          await waitForDatabase(pool);
+        } catch (error) {
+          console.error("Strategy Court auth database is unavailable", error);
+          return databaseUnavailable(headers);
+        }
         return responseWithCors(await auth.handler(request), headers);
       }
 
       if (request.method === "GET" && path === "/api/health") {
+        try {
+          await waitForDatabase(pool, []);
+        } catch {
+          return databaseUnavailable(headers);
+        }
         return json({ status: "ok", queueDepth: queue.size, recoveredJobs, engineVersion: DOMAIN_ENGINE_VERSION }, 200, headers);
       }
 

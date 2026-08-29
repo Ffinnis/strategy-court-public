@@ -40,6 +40,9 @@ function setMode(next: AuthMode) {
 function messageForAuthError(issue: { message?: string; status?: number; statusText?: string } | null, action: string): string {
   if (!issue) return `Could not ${action}.`;
   if (issue.status === 401) return "Email or password is incorrect.";
+  if (issue.status === 429) return "Too many attempts. Wait a few seconds, then try again.";
+  if (issue.status === 503) return "The account service is warming up. Try again in a moment.";
+  if (issue.status && issue.status >= 500) return "The account service could not finish that request. Try again.";
   if (issue.status === 409 || issue.message?.toLowerCase().includes("already exists")) {
     return "An account already exists for this email. Sign in instead.";
   }
