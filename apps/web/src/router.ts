@@ -1,23 +1,16 @@
 import { createRouter, createWebHistory } from "vue-router";
-import LandingPage from "@/pages/LandingPage.vue";
-import CaseIntakePage from "@/pages/CaseIntakePage.vue";
-import CaseWorkspacePage from "@/pages/CaseWorkspacePage.vue";
-import IndicatorCatalogPage from "@/pages/IndicatorCatalogPage.vue";
-import SharedIndicatorPage from "@/pages/SharedIndicatorPage.vue";
-import SharedReportPage from "@/pages/SharedReportPage.vue";
-import AuthPage from "@/pages/AuthPage.vue";
 import { authClient, safeAuthRedirect } from "@/services/auth";
 
 const router = createRouter({
   history: createWebHistory(),
   routes: [
-    { path: "/", name: "home", component: LandingPage },
-    { path: "/auth", name: "auth", component: AuthPage },
-    { path: "/new", name: "new-case", component: CaseIntakePage, meta: { requiresAuth: true } },
-    { path: "/case/:caseId", name: "case", component: CaseWorkspacePage, meta: { requiresAuth: true } },
-    { path: "/indicators", name: "indicators", component: IndicatorCatalogPage, meta: { requiresAuth: true } },
-    { path: "/indicator/:token", name: "indicator", component: SharedIndicatorPage },
-    { path: "/report/:token", name: "report", component: SharedReportPage },
+    { path: "/", name: "home", component: () => import("@/pages/LandingPage.vue") },
+    { path: "/auth", name: "auth", component: () => import("@/pages/AuthPage.vue") },
+    { path: "/new", name: "new-case", component: () => import("@/pages/CaseIntakePage.vue"), meta: { requiresAuth: true } },
+    { path: "/case/:caseId", name: "case", component: () => import("@/pages/CaseWorkspacePage.vue"), meta: { requiresAuth: true } },
+    { path: "/indicators", name: "indicators", component: () => import("@/pages/IndicatorCatalogPage.vue"), meta: { requiresAuth: true } },
+    { path: "/indicator/:token", name: "indicator", component: () => import("@/pages/SharedIndicatorPage.vue") },
+    { path: "/report/:token", name: "report", component: () => import("@/pages/SharedReportPage.vue") },
   ],
   scrollBehavior: () => ({ top: 0 }),
 });
