@@ -47,6 +47,15 @@ describe("custom form controls", () => {
     expect(intake).toContain("<FormDatePicker");
   });
 
+  test("an open select stays above the sticky workspace tabs", () => {
+    const select = readFileSync(new URL("../src/components/forms/FormSelect.vue", import.meta.url), "utf8");
+    const workspace = readFileSync(new URL("../src/pages/CaseWorkspacePage.vue", import.meta.url), "utf8");
+    const selectLayer = Number(select.match(/\.form-select--open\s*\{[^}]*z-index:\s*(\d+)/s)?.[1]);
+    const tabsLayer = Number(workspace.match(/\.workspace-tabs\s*\{[^}]*z-index:\s*(\d+)/s)?.[1]);
+
+    expect(selectLayer).toBeGreaterThan(tabsLayer);
+  });
+
   test("Vue sources do not use native select or date controls", () => {
     const sourceRoot = new URL("../src/", import.meta.url);
     const vueFiles = [...new Bun.Glob("**/*.vue").scanSync(fileURLToPath(sourceRoot))].sort();

@@ -327,7 +327,7 @@ onBeforeUnmount(() => {
 }
 
 .form-select--open {
-  z-index: 30;
+  z-index: 60;
 }
 
 .form-select__trigger {
