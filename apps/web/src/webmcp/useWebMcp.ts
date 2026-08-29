@@ -365,14 +365,17 @@ export function useWebMcp(enabled: Readonly<Ref<boolean>> = ref(true)): DeepRead
         startDate: date,
         endDate: date,
         courtProfile: described(sharedRun.properties.courtProfile!, "Court test profile. The MVP supports balanced."),
-        dataSnapshotPolicy: described(sharedRun.properties.dataSnapshotPolicy!, "Use frozen for reproducibility, prefer_cache for cached data, or refresh for an explicit provider refresh."),
-      }, ["caseId", "strategyVersionId", "startDate", "endDate", "courtProfile", "dataSnapshotPolicy"]),
+        dataSnapshotPolicy: {
+          ...described(sharedRun.properties.dataSnapshotPolicy!, "Omit to use live Alpaca data. Use prefer_cache for cached data or frozen for an explicit reproducible fixture run."),
+          default: "refresh",
+        },
+      }, ["caseId", "strategyVersionId", "startDate", "endDate", "courtProfile"]),
       annotations: { readOnlyHint: false, untrustedContentHint: false },
       execute: execute(async (input, signal) => {
         const current = visibleCase(input);
         if (input.strategyVersionId !== store.activeVersion?.id) throw new Error("Use the active confirmed strategyVersionId returned by get_case_context.");
         if (input.startDate !== current.startDate || input.endDate !== current.endDate) throw new Error(`Use the locked case range ${current.startDate} through ${current.endDate}.`);
-        const runId = await store.runCourt(input.dataSnapshotPolicy as DataSnapshotPolicy, "balanced", "agent", signal);
+        const runId = await store.runCourt(input.dataSnapshotPolicy as DataSnapshotPolicy | undefined, "balanced", "agent", signal);
         if (!runId) throw new Error(store.error ?? "Court did not create a completed run.");
         const run = store.currentCase?.runs.find((item) => item.id === runId);
         return state(`Court run ${runId} completed. Call get_case_context, then inspect the weakest returned verdict.`, {

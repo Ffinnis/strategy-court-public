@@ -845,7 +845,7 @@ export async function createApp(options: AppOptions = {}): Promise<ApiApp> {
         const profile = input.courtProfile === undefined || input.courtProfile === "balanced"
           ? "balanced"
           : (() => { throw new ApiError(422, "validation_error", "Only the balanced Court profile is available"); })();
-        const policy = typeof input.dataSnapshotPolicy === "string" ? input.dataSnapshotPolicy : "frozen";
+        const policy = typeof input.dataSnapshotPolicy === "string" ? input.dataSnapshotPolicy : "refresh";
         if (!["frozen", "prefer_cache", "refresh"].includes(policy)) throw new ApiError(422, "validation_error", "Unsupported dataSnapshotPolicy");
         const run = await store.createRun(caseId, versionId, profile, DOMAIN_ENGINE_VERSION, actor, ownerUserId);
         queueRun(run, policy, ownerUserId);

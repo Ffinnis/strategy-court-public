@@ -538,7 +538,7 @@ export const useCourtStore = defineStore("court", () => {
     finally { mutating.value = false; }
   }
 
-  async function runCourt(dataSnapshotPolicy: "frozen" | "prefer_cache" | "refresh" = "frozen", courtProfile: "balanced" = "balanced", actor: ApiActor = "user", signal?: AbortSignal): Promise<string | null> {
+  async function runCourt(dataSnapshotPolicy: "frozen" | "prefer_cache" | "refresh" = "refresh", courtProfile: "balanced" = "balanced", actor: ApiActor = "user", signal?: AbortSignal): Promise<string | null> {
     if (!currentCase.value || !activeVersion.value || !confirmed.value) return null;
     mutating.value = true; error.value = null; activeTab.value = "court";
     try {

@@ -5,7 +5,7 @@ import { useCourtStore } from "@/stores/court";
 import CourtResultChart from "@/charts/CourtResultChart.vue";
 
 const store = useCourtStore();
-const dataPolicy = ref<"frozen" | "refresh">("frozen");
+const dataPolicy = ref<"frozen" | "refresh">("refresh");
 const stages = [
   "Baseline simulation",
   "Untouched evaluation",

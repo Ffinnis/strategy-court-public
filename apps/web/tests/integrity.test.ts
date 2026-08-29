@@ -248,6 +248,9 @@ describe("connected-state integrity", () => {
     await new Promise((resolve) => setTimeout(resolve, 0));
     expect(registered.has("get_monitoring_status")).toBe(false);
     expect(registered.has("run_court")).toBe(true);
+    const runCourtSchema = registered.get("run_court")!.inputSchema as { required: string[]; properties: Record<string, { default?: unknown }> };
+    expect(runCourtSchema.required).not.toContain("dataSnapshotPolicy");
+    expect(runCourtSchema.properties.dataSnapshotPolicy?.default).toBe("refresh");
 
     const assertClosed = (value: unknown): void => {
       if (!value || typeof value !== "object") return;
