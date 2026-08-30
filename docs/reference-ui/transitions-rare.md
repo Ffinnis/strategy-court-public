@@ -2,7 +2,7 @@
 
 Research date: 2026-08-26
 
-Sources: [Transitions.dev](https://transitions.dev/) and [Rare UI](https://www.rareui.com/). Screenshots are in [`docs/reference-ui/transitions-rare/`](./transitions-rare/).
+Sources: [Transitions.dev](https://transitions.dev/) and [Rare UI](https://www.rareui.com/). The private research screenshots are excluded from the public repository. The filename index below records what was inspected, not bundled assets.
 
 ## What is worth borrowing
 

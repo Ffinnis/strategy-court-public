@@ -24,7 +24,7 @@ The Sentinel crypto hero by Ayda Oz in the same gallery uses a glowing central e
 
 ## Data and interaction constraints
 
-- The preview contains real saved QQQ OHLC prices for 2024 and SMA120 calculated with pre-year warmup. It is labelled historical, adjusted Yahoo Finance data, not Alpaca live data.
+- The preview now contains original synthetic OHLC values with SMA120 calculated using pre-year warmup. It is labeled Synthetic demo and is not actual QQQ data. Real backtests use Alpaca by default.
 - No fabricated Court verdict, trade count, strategy return, or profit claim appears on the landing.
 - The example price chart supports 6-month and 1-year ranges, pointer inspection, keyboard inspection and an accessible readout.
 - “Create strategy” keeps the authenticated intake flow. “Open sample” retains the server-backed sample workflow and a retryable error state.

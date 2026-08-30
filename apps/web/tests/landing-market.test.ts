@@ -1,17 +1,17 @@
 import { expect, test } from "bun:test";
-import { LANDING_MARKET_DATA, LANDING_MARKET_SOURCE } from "../src/data/landingMarket";
+import { LANDING_MARKET_DATA, LANDING_MARKET_SOURCE } from "../src/data/syntheticLandingMarket";
 
 type SourceBar = { date: string; open: number; high: number; low: number; close: number; volume: number };
 
-test("landing preview contains an ordered, valid year of QQQ prices", () => {
-  expect(LANDING_MARKET_DATA).toHaveLength(252);
+test("landing preview contains an ordered year of clearly labeled synthetic prices", () => {
+  expect(LANDING_MARKET_DATA).toHaveLength(261);
   expect(LANDING_MARKET_DATA[0]?.[0]).toBe("2024-01-02");
   expect(LANDING_MARKET_DATA.at(-1)?.[0]).toBe("2024-12-31");
   expect(LANDING_MARKET_SOURCE).toMatchObject({
     symbol: "QQQ",
-    provider: "Yahoo Finance",
-    mode: "Saved historical snapshot",
-    adjustment: "Split and dividend adjusted",
+    provider: "Strategy Court generator",
+    mode: "Synthetic demo",
+    adjustment: "None, generated values",
     startDate: "2024-01-02",
     endDate: "2024-12-31",
   });
@@ -30,7 +30,7 @@ test("landing preview contains an ordered, valid year of QQQ prices", () => {
 });
 
 test("landing prices and SMA match the saved source, including pre-year warmup", async () => {
-  const snapshot = await Bun.file(new URL("../../../packages/fixtures/market-data/frozen-snapshot.json", import.meta.url)).json() as {
+  const snapshot = await Bun.file(new URL("../../../packages/fixtures/market-data/synthetic-snapshot.json", import.meta.url)).json() as {
     id: string;
     fetchedAt: string;
     bars: { QQQ: SourceBar[] };
@@ -56,9 +56,16 @@ test("landing prices and SMA match the saved source, including pre-year warmup",
 });
 
 test("landing market module has no runtime imports or fixture payload", async () => {
-  const source = await Bun.file(new URL("../src/data/landingMarket.ts", import.meta.url)).text();
+  const source = await Bun.file(new URL("../src/data/syntheticLandingMarket.ts", import.meta.url)).text();
   expect(source).not.toMatch(/^\s*import\s/m);
   expect(source).not.toMatch(/import\s*\(|require\s*\(/);
   expect(source).not.toContain("@strategy-court/fixtures");
-  expect(source).not.toContain("frozen-snapshot.json");
+  expect(source).not.toContain("synthetic-snapshot.json");
+});
+
+test("landing copy never presents generated values as actual market evidence", async () => {
+  const page = await Bun.file(new URL("../src/pages/LandingPage.vue", import.meta.url)).text();
+  expect(page).toContain("Synthetic demo");
+  expect(LANDING_MARKET_SOURCE.note).toContain("Not actual QQQ prices");
+  expect(page).not.toContain("Historical preview");
 });

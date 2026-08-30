@@ -16,7 +16,7 @@ Requirements:
 - PostgreSQL 14 or newer
 - Docker with Compose, unless PostgreSQL already runs locally
 - A browser with JavaScript enabled
-- Alpaca market-data credentials for the default refreshed-data mode, or an explicit Frozen snapshot selection for offline testing
+- Alpaca market-data credentials for the default refreshed-data mode, or an explicit Synthetic demo selection for offline software testing
 
 ```bash
 bun install --frozen-lockfile
@@ -52,7 +52,9 @@ Create an account in the app before opening a case. Better Auth owns sessions an
 
 Google sign-in is optional. Create a Google OAuth web client, set its authorized redirect URI to `${BETTER_AUTH_URL}/api/auth/callback/google`, fill `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET`, and set `VITE_GOOGLE_AUTH_ENABLED=true`. Generate a production secret with `openssl rand -base64 32`; the API rejects the placeholder secret when `NODE_ENV=production`.
 
-The default data policy is **Refresh from Alpaca** and requires `ALPACA_API_KEY` and `ALPACA_API_SECRET` in `.env`. The default historical feed is `sip`, covering all US exchanges. Alpaca permits historical SIP requests on its free plan when the requested end time is at least 15 minutes old ([Alpaca FAQ](https://docs.alpaca.markets/us/v1.4.2/docs/market-data-faq)). Set `ALPACA_FEED=iex` only if you specifically need that exchange; its available history may not cover the sample's January 2020 start. Incomplete coverage is rejected, never silently filled with fixture data. For testing without credentials, explicitly choose **Frozen snapshot** when running the Court, or pass `dataSnapshotPolicy: "frozen"` through WebMCP. The bundled historical snapshot covers AAPL, MSFT, NVDA, QQQ, and SPY from 2020 through 2025. Use 2020–2024 for Court testing and reserve 2025 for replay. It is recorded historical data, not live data or a prediction. The landing chart is also a labeled historical QQQ sample.
+The default data policy is **Refresh from Alpaca** and requires `ALPACA_API_KEY` and `ALPACA_API_SECRET` in `.env`. The default historical feed is `sip`, covering all US exchanges. Alpaca permits historical SIP requests on its free plan when the requested end time is at least 15 minutes old ([Alpaca FAQ](https://docs.alpaca.markets/us/v1.4.2/docs/market-data-faq)). Set `ALPACA_FEED=iex` only if you specifically need that exchange; its available history may not cover the sample's January 2020 start. Incomplete coverage is rejected, never silently filled with fixture data.
+
+For testing without credentials, explicitly choose **Synthetic demo**, or pass `dataSnapshotPolicy: "frozen"` through WebMCP. The API keeps this policy name for compatibility. These bundled prices are generated from a fixed seed, not downloaded or calibrated from market data. AAPL, MSFT, NVDA, QQQ, and SPY are example symbol labels, not actual prices for those securities. Sessions are fictional weekdays from 2020 through 2025, not an exchange calendar. Use 2020 through 2024 for Court software testing and reserve 2025 for replay. Synthetic results are not investment evidence. The landing chart uses the same labeled synthetic data. Run `bun run fixtures:generate` to regenerate the snapshot, chart preview, and golden result without network access. Builds check the snapshot and preview for drift.
 
 ## Demo path
 
@@ -110,7 +112,7 @@ Railway's current free plan requires Serverless to stay enabled. On that plan, e
 
 Email and password login work without more configuration. To enable Google login, set `ENABLE_GOOGLE_LOGIN=true`, `GOOGLE_CLIENT_ID`, and `GOOGLE_CLIENT_SECRET`, then register `https://your-domain/api/auth/callback/google` as the Google OAuth redirect URI. The Docker build maps the public boolean to `VITE_GOOGLE_AUTH_ENABLED`; OAuth secrets remain runtime variables.
 
-Set `ALPACA_API_KEY` and `ALPACA_API_SECRET` for the default Alpaca data policy. Credentials stay on the server. Each Alpaca page has a 15-second deadline; the complete snapshot has a 60-second deadline. A timeout produces an actionable run error and releases the queue. Frozen snapshots remain an explicit fallback, never a silent replacement for a failed refresh.
+Set `ALPACA_API_KEY` and `ALPACA_API_SECRET` for the default Alpaca data policy. Credentials stay on the server. Each Alpaca page has a 15-second deadline; the complete snapshot has a 60-second deadline. A timeout produces an actionable run error and releases the queue. Synthetic demo data requires an explicit selection and never replaces a failed refresh silently.
 
 The [hackathon's supported testing setup](https://webmcp.devpost.com/resources) is ChatGPT's in-app browser or Chrome with the WebMCP testing flag, including for the deployed app. To enable experimental WebMCP for visitors using Chrome without that flag, enroll the final HTTPS domain in the [WebMCP origin trial](https://developer.chrome.com/docs/ai/webmcp) and add the issued token to `apps/web/index.html` before rebuilding.
 
@@ -123,7 +125,7 @@ apps/
 packages/
   schemas/   shared strategy and market contracts with runtime validation
   domain/    indicators, backtest, Court, variants, replay, hashing
-  fixtures/  frozen market data and sample definitions
+  fixtures/  synthetic test data, generator, and sample definitions
 docs/
   research.md
   implementation-plan.md
@@ -160,8 +162,8 @@ Schemas reject extra fields and executable code. The API validates requests agai
 
 ## Publication and attribution
 
-Original Strategy Court code and documentation are licensed under [MIT](./LICENSE). This license does not cover third-party market data, research screenshots, or dependencies, which retain their own rights and terms.
+Original Strategy Court code, documentation, and generated synthetic fixtures are licensed under [MIT](./LICENSE). Third-party dependencies and bundled skills retain their own licenses.
 
-See [third-party materials](./docs/third-party-materials.md) before publishing or relicensing this repository. The installed dependencies retain their own licenses; recorded market data and design-reference screenshots are not original Strategy Court code. Chart attribution is available from the app footer.
+See [third-party materials](./docs/third-party-materials.md) for notices and data provenance. Downloaded price snapshots and copied design screenshots are excluded from the public source and its history. Chart attribution and dependency licenses are available from the app footer.
 
 Before submitting, verify that GitHub displays the chosen open-source license and that the repository is public. Follow the [official submission rules](https://webmcp.devpost.com/rules) and [current FAQ](https://webmcp.devpost.com/resources). Leave the submitted code and live app unchanged after the deadline until winners are announced; use a separate copy for later development.

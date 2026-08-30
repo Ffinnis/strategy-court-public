@@ -128,7 +128,7 @@ const metricSections = computed(() => [
       <div class="run-ready__controls">
         <div class="data-policy" aria-label="Market data source">
           <button type="button" :aria-pressed="dataPolicy === 'frozen'" :class="{ active: dataPolicy === 'frozen' }" @click="dataPolicy = 'frozen'">
-            <Database :size="14" /> Frozen snapshot
+            <Database :size="14" /> Synthetic demo
           </button>
           <button type="button" :aria-pressed="dataPolicy === 'refresh'" :class="{ active: dataPolicy === 'refresh' }" @click="dataPolicy = 'refresh'">
             <RefreshCw :size="14" /> Refresh from Alpaca
@@ -154,7 +154,7 @@ const metricSections = computed(() => [
       <div class="run-ready__controls">
         <div class="data-policy" aria-label="Market data source">
           <button type="button" :aria-pressed="dataPolicy === 'frozen'" :class="{ active: dataPolicy === 'frozen' }" @click="dataPolicy = 'frozen'">
-            <Database :size="14" /> Frozen snapshot
+            <Database :size="14" /> Synthetic demo
           </button>
           <button type="button" :aria-pressed="dataPolicy === 'refresh'" :class="{ active: dataPolicy === 'refresh' }" @click="dataPolicy = 'refresh'">
             <RefreshCw :size="14" /> Refresh from Alpaca
@@ -162,7 +162,7 @@ const metricSections = computed(() => [
         </div>
         <button class="button" type="button" :disabled="store.mutating" @click="store.runCourt(dataPolicy)"><Play :size="15" fill="currentColor" />{{ failedRun ? "Retry Court run" : "Run Court" }}</button>
       </div>
-      <small class="run-ready__meta">{{ dataPolicy === "frozen" ? "Frozen historical data" : "Fresh Alpaca request" }} · {{ store.currentCase?.startDate }} — {{ store.currentCase?.endDate }}</small>
+      <small class="run-ready__meta">{{ dataPolicy === "frozen" ? "Generated prices, not market evidence" : "Fresh Alpaca request" }} · {{ store.currentCase?.startDate }} — {{ store.currentCase?.endDate }}</small>
     </section>
   </div>
 

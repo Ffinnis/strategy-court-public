@@ -165,10 +165,11 @@ export function riskProfileVerdict(metrics: BacktestMetrics): CourtVerdict {
   return verdict("risk_profile", "Risk profile", status, metrics.unrecoveredDrawdown ? "The final drawdown did not recover before the test ended." : `Maximum drawdown is ${metrics.maximumDrawdownPercent.toFixed(1)}% and recovery took ${recovery ?? 0} trading days.`, ["Pass: drawdown at most 25% and recovery at most 252 trading days", "Warning: drawdown above 25% to 35% or recovery above 252 to 504 days", "Fail: drawdown above 35%, recovery above 504 days, or no recovery by period end"], { maximumDrawdownPercent: metrics.maximumDrawdownPercent, recoveryTimeDays: recovery, unrecoveredDrawdown: metrics.unrecoveredDrawdown });
 }
 
-export function summarizeCourt(verdicts: readonly CourtVerdict[], hasDataWarning = false): CourtSummaryLabel {
+export function summarizeCourt(verdicts: readonly CourtVerdict[], hasDataWarning = false, syntheticData = false): CourtSummaryLabel {
   const byCategory = new Map(verdicts.map((item) => [item.category, item.status]));
   const material = verdicts.filter((item) => item.category !== "evidence_sufficiency");
   if (material.some((item) => item.status === "Fail")) return "Fragile";
+  if (syntheticData) return "Inconclusive";
   if (byCategory.get("evidence_sufficiency") === "Inconclusive" || byCategory.get("out_of_sample_robustness") === "Inconclusive") return "Inconclusive";
   if (!hasDataWarning && verdicts.every((item) => item.status === "Pass")) return "Survived current tests";
   if (
@@ -319,6 +320,7 @@ export function runCourt(input: CourtInput): CourtReport {
     riskProfileVerdict(baseline.metrics),
   ];
   const dataWarnings: string[] = [];
+  if (input.snapshot.provider === "synthetic_demo") dataWarnings.push("Synthetic demo prices, not actual market history. Results test the software only and are not investment evidence.");
   if (baseline.diagnostics.missingBars > 0) dataWarnings.push(`${baseline.diagnostics.missingBars} missing bars were reported by the data snapshot.`);
   if ((input.snapshot.bars.SPY?.filter((bar) => bar.date >= range.start && bar.date <= range.end).length ?? 0) < 272) dataWarnings.push("SPY history is too short for complete 200-day trend and trailing volatility-regime classification.");
   const reproducibilityId = createReproducibilityId({
@@ -336,7 +338,7 @@ export function runCourt(input: CourtInput): CourtReport {
   return {
     engineVersion: ENGINE_VERSION,
     reproducibilityId,
-    summaryLabel: summarizeCourt(verdicts, dataWarnings.length > 0),
+    summaryLabel: summarizeCourt(verdicts, dataWarnings.length > 0, input.snapshot.provider === "synthetic_demo"),
     limitation: HISTORICAL_LIMITATION,
     splitDate,
     baseline,

@@ -5,7 +5,7 @@ import { ArrowDown, ArrowRight, ArrowUpRight, Check, Plus } from "lucide-vue-nex
 import LandingMarketPreview from "@/components/LandingMarketPreview.vue";
 import { useCourtStore } from "@/stores/court";
 import { authClient } from "@/services/auth";
-import { LANDING_MARKET_SOURCE } from "@/data/landingMarket";
+import { LANDING_MARKET_SOURCE } from "@/data/syntheticLandingMarket";
 
 const router = useRouter();
 const route = useRoute();
@@ -79,10 +79,10 @@ const steps = [
       </div>
     </section>
 
-    <section class="investigation" aria-label="Historical chart and example trading rules">
+    <section class="investigation" aria-label="Synthetic chart and example trading rules">
       <header class="investigation__header">
-        <div class="investigation__instrument"><strong>{{ LANDING_MARKET_SOURCE.symbol }}</strong><span>Nasdaq 100 <i>·</i> 2024</span></div>
-        <span class="investigation__status"><span />Historical preview</span>
+        <div class="investigation__instrument"><strong>{{ LANDING_MARKET_SOURCE.symbol }}</strong><span>Example symbol <i>·</i> 2024</span></div>
+        <span class="investigation__status"><span />Synthetic demo</span>
       </header>
       <div class="investigation__body">
         <LandingMarketPreview />
@@ -101,8 +101,8 @@ const steps = [
         </aside>
       </div>
       <footer class="investigation__source">
-        <span>Saved {{ LANDING_MARKET_SOURCE.provider }} prices, adjusted for splits and dividends.</span>
-        <span>Historical data, not a live signal.</span>
+        <span>{{ LANDING_MARKET_SOURCE.note }}</span>
+        <span>Backtests use Alpaca by default.</span>
       </footer>
     </section>
 

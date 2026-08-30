@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref } from "vue";
-import { LANDING_MARKET_DATA } from "@/data/landingMarket";
+import { LANDING_MARKET_DATA } from "@/data/syntheticLandingMarket";
 
 const period = ref<"6m" | "1y">("1y");
 const activeIndex = ref<number | null>(null);
@@ -78,7 +78,7 @@ function selectBar(index: number) {
       </div>
     </div>
 
-    <div class="market-preview__readout" aria-label="Historical price details">
+    <div class="market-preview__readout" aria-label="Synthetic price details">
       <time :datetime="current[0]">{{ formatDate(current[0]) }}</time>
       <span><abbr title="Open">O</abbr> {{ current[1].toFixed(2) }}</span>
       <span><abbr title="High">H</abbr> {{ current[2].toFixed(2) }}</span>
@@ -91,7 +91,7 @@ function selectBar(index: number) {
       class="market-preview__plot"
       tabindex="0"
       role="group"
-      aria-label="QQQ historical chart. Use left and right arrow keys to inspect daily prices."
+      aria-label="Synthetic QQQ example, not actual market prices. Use left and right arrow keys to inspect generated prices."
       @pointermove="inspect"
       @pointerleave="activeIndex = null"
       @keydown.left.prevent="step(-1)"
@@ -100,7 +100,7 @@ function selectBar(index: number) {
       @keydown.end.prevent="selectBar(bars.length - 1)"
       @blur="activeIndex = null"
     >
-      <svg :viewBox="`0 0 ${width} ${height}`" role="img" aria-label="Daily QQQ candlesticks and the 120-day simple moving average in 2024">
+      <svg :viewBox="`0 0 ${width} ${height}`" role="img" aria-label="Synthetic candlesticks and the 120-day simple moving average in 2024">
         <g v-for="level in levels" :key="level" class="market-preview__grid">
           <line x1="0" :x2="plotRight" :y1="y(level)" :y2="y(level)" />
           <text :x="plotRight + 10" :y="y(level) + 4">${{ level.toFixed(0) }}</text>

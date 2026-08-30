@@ -67,12 +67,14 @@ describe("Court threshold boundaries", () => {
     ] as const;
     const verdicts: CourtVerdict[] = categories.map((category) => ({ category, title: category, status: "Pass", summary: "", thresholds: [], evidence: {} }));
     expect(summarizeCourt(verdicts)).toBe("Survived current tests");
+    expect(summarizeCourt(verdicts, true, true)).toBe("Inconclusive");
     const third = verdicts[2];
     if (!third) throw new Error("Missing verdict fixture");
     verdicts[2] = { ...third, status: "Inconclusive" };
     expect(summarizeCourt(verdicts)).toBe("Inconclusive");
     verdicts[2] = { ...third, status: "Warning" };
     expect(summarizeCourt(verdicts)).toBe("Paper-trading candidate");
+    expect(summarizeCourt(verdicts, true, true)).toBe("Inconclusive");
     verdicts[2] = { ...third, status: "Fail" };
     expect(summarizeCourt(verdicts)).toBe("Fragile");
   });

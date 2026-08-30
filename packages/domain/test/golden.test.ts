@@ -1,8 +1,8 @@
 import { expect, test } from "bun:test";
 import { runCourt } from "../src/index.ts";
 import { SAMPLE_STRATEGY, type DataSnapshot } from "@strategy-court/schemas";
-import snapshotJson from "../../fixtures/market-data/frozen-snapshot.json";
-import expected from "../../fixtures/expected-results/sample-result.json";
+import snapshotJson from "../../fixtures/market-data/synthetic-snapshot.json";
+import expected from "../../fixtures/expected-results/synthetic-result.json";
 
 test("frozen sample reproduces the committed golden report", () => {
   const input = {

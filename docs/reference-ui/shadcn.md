@@ -16,19 +16,19 @@ shadcn works here because it is quiet. Layout comes from spacing, one-pixel bord
 
 ## Screenshot set
 
+The private captures are excluded from the public source. The links below point to the original component documentation.
+
 | Capture | What it shows |
 | --- | --- |
-| [button.png](./shadcn/button.png) | Default button and icon button inside a bordered demo frame |
-| [field.png](./shadcn/field.png) | Label, input, description, grouped fields, and fieldset hierarchy |
-| [tabs.png](./shadcn/tabs.png) | Compact segmented tabs above one content panel |
-| [data-table.png](./shadcn/data-table.png) | Toolbar, selection, rows, row actions, selection count, and pagination |
-| [empty.png](./shadcn/empty.png) | Centered empty state with one primary and one secondary action |
-| [skeleton.png](./shadcn/skeleton.png) | Shape-matched loading placeholders |
-| [sheet.png](./shadcn/sheet.png) | Sheet trigger in context |
-| [sheet-open.png](./shadcn/sheet-open.png) | Right sheet with overlay, heading, form, footer action, and close control |
-| [command.png](./shadcn/command.png) | Command component documentation and grouped list composition |
-| [command-open.png](./shadcn/command-open.png) | Command dialog with search, selected row, disabled row, and shortcuts |
-| [blocks.png](./shadcn/blocks.png) | Dashboard block shell and preview toolbar |
+| [Button](https://ui.shadcn.com/docs/components/button) | Default button and icon button inside a bordered demo frame |
+| [Field](https://ui.shadcn.com/docs/components/field) | Label, input, description, grouped fields, and fieldset hierarchy |
+| [Tabs](https://ui.shadcn.com/docs/components/tabs) | Compact segmented tabs above one content panel |
+| [Data table](https://ui.shadcn.com/docs/components/data-table) | Toolbar, selection, rows, row actions, selection count, and pagination |
+| [Empty](https://ui.shadcn.com/docs/components/empty) | Centered empty state with one primary and one secondary action |
+| [Skeleton](https://ui.shadcn.com/docs/components/skeleton) | Shape-matched loading placeholders |
+| [Sheet](https://ui.shadcn.com/docs/components/sheet) | Trigger, overlay, heading, form, footer action, and close control |
+| [Command](https://ui.shadcn.com/docs/components/command) | Search, grouped list, selected row, disabled row, and shortcuts |
+| [Blocks](https://ui.shadcn.com/blocks) | Dashboard block shell and preview toolbar |
 
 ## Component inventory
 

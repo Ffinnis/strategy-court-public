@@ -81,6 +81,7 @@ export function evaluateLatestCompletedBar(input: LatestBarMonitoringInput): Lat
   const regimes = classifyMarketRegimes(snapshot);
   const signals = strategy.universe.map((symbol) => signalFor(symbol, strategy, snapshot, evaluatedDate));
   const warnings = [HISTORICAL_LIMITATION, "Signals are evaluated observations. Strategy Court does not submit orders."];
+  if (snapshot.provider === "synthetic_demo") warnings.unshift("Synthetic demo prices, not actual market observations.");
   if (result.diagnostics.missingBars > 0) warnings.unshift(`${result.diagnostics.missingBars} missing market sessions were recorded in this snapshot.`);
   if (input.previous?.evaluatedDate === evaluatedDate) warnings.unshift("No newer completed daily bar was available.");
   const current: Omit<LatestBarMonitoringStatus, "changes"> = {

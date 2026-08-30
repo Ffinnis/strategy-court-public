@@ -1035,7 +1035,7 @@ export async function createApp(options: AppOptions = {}): Promise<ApiApp> {
         if (!snapshot) {
           const requestedPolicy = typeof input.dataSnapshotPolicy === "string"
             ? input.dataSnapshotPolicy
-            : courtSnapshot.provider === "fixture" ? "frozen" : "prefer_cache";
+            : courtSnapshot.provider === "synthetic_demo" ? "frozen" : "prefer_cache";
           if (!["frozen", "prefer_cache", "refresh"].includes(requestedPolicy)) {
             throw new ApiError(422, "invalid_snapshot_policy", "Replay dataSnapshotPolicy must be frozen, prefer_cache, or refresh");
           }

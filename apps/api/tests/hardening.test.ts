@@ -754,7 +754,8 @@ describe("Stage C verifier regressions", () => {
     expect(fetchCalls).toBe(2);
     const validFixture = await fixture.getSnapshot({ symbols: ["AAPL", "SPY"], dateFrom: "2020-01-02", dateTo: "2025-12-31" });
     expect(validFixture).toMatchObject({
-      provider: "fixture",
+      provider: "synthetic_demo",
+      adjustment: "none",
       feed: "frozen",
       dateFrom: "2020-01-02",
       dateTo: "2025-12-31",
@@ -763,6 +764,8 @@ describe("Stage C verifier regressions", () => {
         dateFrom: "2020-01-02",
         dateTo: "2025-12-31",
         frozen: true,
+        synthetic: true,
+        sourceProvider: "synthetic_demo",
         availableCoverage: { dateFrom: "2020-01-02", dateTo: "2025-12-31" },
       },
     });

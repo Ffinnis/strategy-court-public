@@ -8,3 +8,13 @@ coverage/
 playwright-report/
 test-results/
 output/
+
+# Kept out of the public source release. Do not restore these from old clones.
+/.agents/skills/ui-radar/
+/docs/reference-ui/beautiful-beui/
+/docs/reference-ui/shadcn/
+/docs/reference-ui/transitions-rare/
+/packages/fixtures/market-data/frozen-snapshot.json
+/packages/fixtures/expected-results/sample-result.json
+/packages/fixtures/scripts/generate-frozen-snapshot.ts
+/apps/web/src/data/landingMarket.ts

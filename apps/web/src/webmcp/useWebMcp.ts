@@ -415,7 +415,7 @@ export function useWebMcp(enabled: Readonly<Ref<boolean>> = ref(true)): DeepRead
           endDate: date,
           courtProfile: described(sharedRun.properties.courtProfile!, "Court test profile. The MVP supports balanced."),
           dataSnapshotPolicy: {
-            ...described(sharedRun.properties.dataSnapshotPolicy!, "Omit to use live Alpaca data. Use prefer_cache for cached data or frozen for an explicit reproducible fixture run."),
+            ...described(sharedRun.properties.dataSnapshotPolicy!, "Omit to use real Alpaca data. Use prefer_cache for cached data or frozen for synthetic demo prices, never investment evidence."),
             default: "refresh",
           },
         }, ["caseId", "strategyVersionId", "startDate", "endDate", "courtProfile"]),

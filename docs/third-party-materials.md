@@ -1,18 +1,17 @@
-# Third-party materials
+# Third-party materials and data provenance
 
-This inventory separates original application code from material whose rights are held by others. It is not a grant of rights to those materials and does not establish permission to redistribute market data.
-
-The root [MIT license](../LICENSE) applies to original Strategy Court code and documentation only. It does not relicense any third-party material listed below.
+The root [MIT license](../LICENSE) covers original Strategy Court code, documentation, and generated synthetic test data. It does not relicense third-party dependencies or grant rights to market data fetched by a deployment.
 
 | Material | Location | Source and treatment |
 | --- | --- | --- |
 | Lightweight Charts | Installed frontend dependency; candle and evidence charts | TradingView, Apache-2.0. Preserve its license, copyright notice, and user-visible TradingView link. The app's Chart attribution link supplies the notice and license. |
-| Historical market snapshot | `packages/fixtures/market-data/frozen-snapshot.json` | Downloaded Yahoo Finance adjusted daily bars. The generating script records the upstream endpoint. Do not describe these as Alpaca data, live data, synthetic test values, or original project code. Redistribution permission has not been established in this repository. |
-| Landing chart sample | `apps/web/src/data/landingMarket.ts` | A recorded QQQ subset derived from that historical snapshot. The UI identifies it as a historical sample. The same market-data permission question applies. |
-| UI research screenshots | `docs/reference-ui/` subdirectories | Third-party screens retained as research references. Markdown files record selected sources and design decisions. Do not include them under a license for original code or assume source attribution grants redistribution rights. |
+| Synthetic fixtures | `packages/fixtures/market-data/synthetic-snapshot.json` | Original fixed-seed generator in `packages/fixtures/src/synthetic-market.ts`. No external prices or calibration data. Symbol names are example labels; dates are fictional weekday sessions, not an exchange calendar. MIT. |
+| Landing chart sample | `apps/web/src/data/syntheticLandingMarket.ts` | Generated from the synthetic snapshot. Visible and accessible copy identifies it as a demo, not actual QQQ prices or investment evidence. MIT. |
+| Design research | `docs/reference-ui/*.md` | Original observations and links to the source websites. Copied screenshots are excluded from public Git history. A source link alone is not a redistribution license. |
+| UI design skills | `.agents/skills/anti-ui-slop/`, `.agents/skills/ui-design/` | Bundled Apache-2.0 licenses, copyright notices, and modification records remain alongside the files. UI Radar has no bundled license and is excluded from the public source; a local installation can be retained privately. |
 | Logo concept and final SVG | `docs/reference-ui/strategy-court-logo-*`, app brand assets | The concept was generated for this project and the SVG was drawn for the app. This is separate from third-party reference screenshots. |
 | Other dependencies | `bun.lock`, `licenses/`, and `apps/web/public/third-party-notices.txt` | The installed production dependency graph supplies the copyright and permission notices shipped with both the website and Docker image. `bun run notices:check` rejects stale notices during a build. Missing npm license texts are vendored from their upstream repositories, with sources recorded in `licenses/README.md`. |
 
-Before making the repository public, the owner must resolve permissions for the recorded market data and research screenshots, or replace/remove those materials from the publication, including relevant commit history. Removing files from the latest commit alone does not remove older Git copies. Do not rewrite shared history or delete the working materials without the owner's approval.
+The earlier Yahoo price snapshot, its derived landing data and golden result, its download script, and the copied research screenshots were removed from the published history with the owner's approval. The owner retains a private backup. Do not merge an old clone into the public repository, because doing so can restore removed files.
 
-The deployed app retrieves Alpaca data using server-side credentials. Its use and display remain subject to the account's data agreement. No credentials belong in source control, screenshots, the public README, or a demo video.
+Real backtests continue to request Alpaca data with server-side credentials. Results and exports retain provider metadata. The source release does not bundle Alpaca prices, credentials, database contents, or previously saved user results. Deployments remain subject to their Alpaca account's data agreement. Never commit credentials or assume this code license permits redistributing provider data.

@@ -461,7 +461,7 @@ export const useCourtStore = defineStore("court", () => {
     const id = await createCase(sampleInput, true);
     if (id) return id;
     error.value = error.value
-      ? `${error.value} The sample uses the real Court API and frozen market snapshot. Check the API, then retry.`
+      ? `${error.value} Opening the sample requires the Court API. Check the API, then retry.`
       : "The sample could not reach the Court API. Check the API, then retry.";
     return null;
   }

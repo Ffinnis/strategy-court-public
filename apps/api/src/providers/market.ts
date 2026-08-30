@@ -219,18 +219,20 @@ export class FixtureMarketProvider implements MarketProvider {
     const request = {
       ...input,
       timeframe: "1Day",
-      adjustment: "all",
+      adjustment: supplied.adjustment,
       frozen: true,
+      synthetic: true,
+      sourceProvider: supplied.provider,
       availableCoverage,
       sourceSnapshotId: supplied.id,
       sourceContentHash: supplied.contentHash,
       sessionCoverage,
     };
-    const hash = contentHash({ provider: "fixture", request, bars });
+    const hash = contentHash({ provider: supplied.provider, request, bars });
     return {
       id: crypto.randomUUID(),
-      provider: "fixture",
-      adjustment: "all",
+      provider: supplied.provider,
+      adjustment: supplied.adjustment,
       feed: "frozen",
       dateFrom: input.dateFrom,
       dateTo: input.dateTo,
@@ -261,7 +263,7 @@ interface AlpacaResponse {
 async function withMarketTimeout<T>(operation: (signal: AbortSignal) => Promise<T>, timeoutMs: number, parent?: AbortSignal): Promise<T> {
   const controller = new AbortController();
   const signal = parent ? AbortSignal.any([parent, controller.signal]) : controller.signal;
-  const issue = new ApiError(504, "market_provider_timeout", "Alpaca did not respond within the market-data deadline. Retry the run or choose Frozen snapshot.");
+  const issue = new ApiError(504, "market_provider_timeout", "Alpaca did not respond within the market-data deadline. Retry the run, or choose Synthetic demo for generated test prices.");
   let rejectAbort: (() => void) | undefined;
   const interrupted = new Promise<never>((_resolve, reject) => {
     rejectAbort = () => reject(signal.reason ?? issue);
@@ -325,7 +327,7 @@ export class AlpacaMarketProvider implements MarketProvider {
         } catch (error) {
           requestSignal.throwIfAborted();
           if (error instanceof ApiError) throw error;
-          throw new ApiError(502, "market_provider_unavailable", "Could not read Alpaca market data. Retry the run or choose Frozen snapshot.");
+          throw new ApiError(502, "market_provider_unavailable", "Could not read Alpaca market data. Retry the run, or choose Synthetic demo for generated test prices.");
         }
       }, this.deadlines.requestMs, signal);
       signal.throwIfAborted();
@@ -402,7 +404,7 @@ export function snapshotForDomain(snapshot: SnapshotRecord): DataSnapshot {
     symbols: snapshot.symbols as DataSnapshot["symbols"],
     startDate: snapshot.dateFrom,
     endDate: snapshot.dateTo,
-    adjustment: "all",
+    adjustment: snapshot.adjustment as DataSnapshot["adjustment"],
     fetchedAt: snapshot.fetchedAt,
     contentHash: snapshot.hash,
     bars: grouped as DataSnapshot["bars"],

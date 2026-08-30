@@ -192,6 +192,8 @@ Use Beautiful UI's Task Rows for the seven test states, Records Table for eviden
 
 ## Captures
 
+These private research captures are excluded from the public repository. The source websites are linked above.
+
 - `beautiful-beui/beautifului-overview.png`
 - `beautiful-beui/beautifului-task-rows.png`
 - `beautiful-beui/beautifului-prompt-bar.png`

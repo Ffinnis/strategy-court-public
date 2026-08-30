@@ -52,4 +52,11 @@ describe("latest completed-bar monitoring", () => {
     const repeated = evaluateLatestCompletedBar({ strategyVersionId: "v1", strategy, snapshot, initialCapital: 10_000, previous });
     expect(repeated.warnings[0]).toBe("No newer completed daily bar was available.");
   });
+
+  test("labels generated observations as synthetic", () => {
+    const snapshot = makeSnapshot(makeBars([{ date: "2024-01-02", open: 10, close: 10 }]));
+    snapshot.provider = "synthetic_demo";
+    const result = evaluateLatestCompletedBar({ strategyVersionId: "v1", strategy: makeStrategy(), snapshot, initialCapital: 10_000 });
+    expect(result.warnings).toContain("Synthetic demo prices, not actual market observations.");
+  });
 });

@@ -1,6 +1,6 @@
 import { runCourt } from "../../domain/src/index.ts";
 import { SAMPLE_STRATEGY, type DataSnapshot } from "@strategy-court/schemas";
-import snapshotJson from "../market-data/frozen-snapshot.json";
+import snapshotJson from "../market-data/synthetic-snapshot.json";
 
 const report = runCourt({
   strategyVersionId: "sample-v1",
@@ -31,5 +31,5 @@ const expected = {
   verdicts: Object.fromEntries(report.verdicts.map((item) => [item.category, item.status])),
 };
 
-await Bun.write(new URL("../expected-results/sample-result.json", import.meta.url), `${JSON.stringify(expected, null, 2)}\n`);
+await Bun.write(new URL("../expected-results/synthetic-result.json", import.meta.url), `${JSON.stringify(expected, null, 2)}\n`);
 console.log(`Wrote ${report.reproducibilityId} with ${report.baseline.metrics.numberOfTrades} baseline trades.`);

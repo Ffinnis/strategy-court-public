@@ -1,0 +1,27 @@
+{
+  "engineVersion": "strategy-court-domain/0.1.0",
+  "reproducibilityId": "sha256:3d3c8a1aad1d6f6adc1e6eeb52669fa8edc44ff2f4d770ae1fea75f5abf4b9d0",
+  "summaryLabel": "Fragile",
+  "splitDate": "2024-03-14",
+  "baseline": {
+    "finalEquity": 90777.1199296004,
+    "netProfit": -9222.8800703996,
+    "numberOfTrades": 34,
+    "maximumDrawdownPercent": 11.6379111766,
+    "totalEstimatedCosts": 633.8623067482
+  },
+  "outOfSample": {
+    "finalEquity": 98353.5890591913,
+    "netProfit": -1646.4109408087,
+    "numberOfTrades": 15
+  },
+  "verdicts": {
+    "evidence_sufficiency": "Inconclusive",
+    "out_of_sample_robustness": "Inconclusive",
+    "parameter_stability": "Fail",
+    "execution_resilience": "Fail",
+    "regime_stability": "Fail",
+    "profit_concentration": "Inconclusive",
+    "risk_profile": "Fail"
+  }
+}

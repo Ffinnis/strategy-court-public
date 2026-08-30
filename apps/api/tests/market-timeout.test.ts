@@ -34,7 +34,7 @@ test("bounds the total snapshot separately from each page", async () => {
 
 test("does not expose transport secrets in errors and keeps provider status actionable", async () => {
   await expect(provider(async () => { throw new Error("private-key private-secret"); }).getSnapshot(request))
-    .rejects.toMatchObject({ code: "market_provider_unavailable", message: "Could not read Alpaca market data. Retry the run or choose Frozen snapshot." });
+    .rejects.toMatchObject({ code: "market_provider_unavailable", message: "Could not read Alpaca market data. Retry the run, or choose Synthetic demo for generated test prices." });
   await expect(provider(async () => new Response("denied", { status: 401 })).getSnapshot(request))
     .rejects.toMatchObject({ code: "market_provider_error", details: { status: 401, provider: "alpaca" } });
 });

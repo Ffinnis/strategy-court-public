@@ -158,8 +158,11 @@ describe("Strategy Court API integration", () => {
     expect(firstRun.result.verdicts).toHaveLength(7);
     expect(firstRun.result.baseline.metrics.initialCapital).toBe(10_000);
     expect(firstRun.result.assumptions.executionTiming).toBe("next_open");
+    expect(firstRun.result.assumptions.provider).toBe("synthetic_demo");
+    expect(firstRun.result.dataWarnings).toContain("Synthetic demo prices, not actual market history. Results test the software only and are not investment evidence.");
     expect(firstRun.result.assumptions.slippageBpsPerSide).toBe(strategy.costs.slippageBpsPerSide);
     const storedSnapshot = (await app.store.getSnapshot(firstRun.dataSnapshotId))!;
+    expect(snapshotForDomain(storedSnapshot).adjustment).toBe("none");
     expect(storedSnapshot.symbols).toContain("SPY");
     const benchmarkCurve = firstRun.result.equityCurve as Array<{ date: string; benchmark?: number }>;
     const spyBars = storedSnapshot.bars.filter((bar) => bar.symbol === "SPY").sort((left, right) => left.timestamp.localeCompare(right.timestamp));
