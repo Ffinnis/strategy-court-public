@@ -60,7 +60,7 @@ async function signOut() {
 
     <footer v-if="!isAuthPage" class="limitation-bar">
       <ShieldCheck :size="15" aria-hidden="true" />
-      <span>Historical tests cannot establish that a strategy will remain profitable in future market conditions. Strategy Court does not place trades. <a href="/chart-attribution.txt" target="_blank" rel="noopener">Chart attribution</a></span>
+      <span>Historical tests cannot establish that a strategy will remain profitable in future market conditions. Strategy Court does not place trades. <a href="/chart-attribution.txt" target="_blank" rel="noopener">Chart attribution</a> · <a href="/third-party-notices.txt" target="_blank" rel="noopener">Software licenses</a></span>
     </footer>
   </div>
 </template>

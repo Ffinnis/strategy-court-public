@@ -17,6 +17,8 @@ RUN bun install --frozen-lockfile
 
 COPY apps apps
 COPY packages packages
+COPY scripts scripts
+COPY licenses licenses
 
 ARG ENABLE_GOOGLE_LOGIN=false
 ENV NODE_ENV=production
@@ -32,6 +34,7 @@ ENV NODE_ENV=production
 COPY --from=build --chown=bun:bun /app/apps/api/dist apps/api/dist
 COPY --from=build --chown=bun:bun /app/apps/web/dist apps/web/dist
 COPY --chown=bun:bun LICENSE ./LICENSE
+COPY --from=build --chown=bun:bun /app/apps/web/dist/third-party-notices.txt ./THIRD_PARTY_NOTICES.txt
 
 USER bun
 
