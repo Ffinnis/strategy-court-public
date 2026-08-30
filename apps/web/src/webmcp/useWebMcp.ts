@@ -10,7 +10,8 @@ import {
 } from "@strategy-court/schemas";
 import { getCurrentScope, onScopeDispose, readonly, ref, watch, type DeepReadonly, type Ref } from "vue";
 import { ApiError, apiRequest, unwrap } from "@/services/api";
-import { useCourtStore } from "@/stores/court";
+import { normalizeCase, useCourtStore } from "@/stores/court";
+import { catalogPage, ToolResults } from "@/webmcp/results";
 import type { StrategyDefinition, StrategyVersion } from "@/types";
 import {
   disposeWebMcpTools,
@@ -192,14 +193,16 @@ function nextActions(store: ReturnType<typeof useCourtStore>): string[] {
   if (!store.currentCase) return ["Create or open a case in the visible app, then call get_case_context without a caseId."];
   if (!store.activeVersion) return ["Call create_strategy_draft for the active case."];
   if (!store.confirmed) return ["Ask the user to review and confirm the visible strategy interpretation. Confirmation is intentionally user-controlled."];
+  if (store.running) return ["Call get_case_context to check the queued or running Court result. Do not start a duplicate run."];
+  if (store.courtInvalid) return ["Read the invalid reason in get_case_context. Correct the data configuration, then retry run_court."];
   if (!store.courtComplete) return ["Call run_court with the active version and the case's locked date range."];
   const actions: string[] = [];
   if (store.monitoringCandidate && store.monitoringStatus?.strategyVersionId !== store.monitoringCandidate.id) {
-    actions.push("Call get_monitoring_status to refresh the confirmed version against the latest completed bar. Monitoring is separate from historical replay.");
+    actions.push("Call get_monitoring_status to read saved latest-bar evidence. Use refresh_monitoring only when the user wants a new market evaluation.");
   }
   if (store.variants.length === 0) actions.push("Inspect a returned failure, then create up to three controlled strategy variants.");
-  if (!store.replay) actions.push("Compare the tested versions and start replay probation only for an eligible version.");
-  else actions.push("Advance the hidden-period replay separately with advance_replay.");
+  if (!store.replay && store.eligibleReplayVersions.length) actions.push("Start replay probation for a replay-eligible version. Compare versions first if variants exist.");
+  else if (store.replay) actions.push("Read get_monitoring_status, then advance the hidden-period replay separately with advance_replay.");
   return actions;
 }
 
@@ -236,11 +239,16 @@ export function useWebMcp(enabled: Readonly<Ref<boolean>> = ref(true)): DeepRead
   const store = useCourtStore();
   const registration = ref<WebMcpRegistrationState>({ status: "registering", expectedToolNames: [], registeredToolNames: [], errors: [] });
   const registrations: WebMcpRegistrations = new Map();
+  const results = new ToolResults();
+  watch(() => [enabled.value, store.currentCase?.id], () => results.clear(), { flush: "sync" });
   let activeContext: ModelContext | null = null;
   let disposed = false;
   let queue = Promise.resolve();
 
-  const state = (message: string, data: unknown, changedIds: string[] = []) => ({ ok: true, message, data, changedIds, currentState: snapshot(store) });
+  const state = (message: string, data: unknown, changedIds: string[] = []) => {
+    const envelope = { ok: true, message, changedIds, currentState: snapshot(store) };
+    return { ...envelope, data: results.pack(data, envelope) };
+  };
   const execute = (handler: ToolHandler): ModelContextTool["execute"] => async (input, options) => {
     const signal = options?.signal ?? new AbortController().signal;
     try {
@@ -250,13 +258,19 @@ export function useWebMcp(enabled: Readonly<Ref<boolean>> = ref(true)): DeepRead
       return result;
     } catch (error) {
       if (signal.aborted) throw signal.reason ?? error;
-      const message = error instanceof Error ? error.message : "The tool could not complete the request.";
+      const message = (error instanceof Error ? error.message : "The tool could not complete the request.").slice(0, 1000);
       const apiError = error instanceof ApiError ? error : null;
       store.error = message;
+      let details: unknown = null;
+      try {
+        details = results.pack(apiError?.details ?? null, { message, currentState: snapshot(store) });
+      } catch {
+        details = { omitted: true, reason: "Error details exceed the browser evidence cache." };
+      }
       return {
         ok: false,
         message,
-        error: { code: apiError?.code ?? "TOOL_EXECUTION_FAILED", details: apiError?.details ?? null },
+        error: { code: apiError?.code ?? "TOOL_EXECUTION_FAILED", details },
         changedIds: [],
         currentState: snapshot(store),
       };
@@ -276,29 +290,64 @@ export function useWebMcp(enabled: Readonly<Ref<boolean>> = ref(true)): DeepRead
       {
         name: "get_case_context",
         title: "Get case context",
-        description: "Read a Strategy Court case and the exact next useful action. Omit caseId to inspect the active case in the current app session.",
-        inputSchema: object({ caseId: optionalCaseId }),
+        description: "Read case IDs, locked settings, verdicts, and next actions. Use detail=strategy for exact active rules without price history, or detail=full for all evidence in pages.",
+        inputSchema: object({ caseId: optionalCaseId, detail: { type: "string", enum: ["summary", "strategy", "full"], default: "summary" } }),
         annotations: { readOnlyHint: true, untrustedContentHint: true },
         execute: execute(async (input, signal) => {
           const requestedId = typeof input.caseId === "string" && input.caseId ? input.caseId : store.currentCase?.id;
           if (!requestedId) return state("No case is active. Create or open a case in the visible app first.", { case: null });
+          let current;
           if (store.currentCase?.id === requestedId) {
             if (!await store.refreshCase("agent", signal)) throw new Error(store.error ?? "The active case could not be refreshed.");
-            return state(`Returned active case ${requestedId}.`, { case: store.currentCase });
+            current = store.currentCase!;
+          } else {
+            current = normalizeCase(unwrap(await agentApi(`/api/cases/${encodeURIComponent(requestedId)}`, signal), "case"));
           }
-          return state(`Returned case ${requestedId}. Open it in the app before using a mutating case tool.`, await agentApi(`/api/cases/${encodeURIComponent(requestedId)}`, signal));
+          const activeVersionId = current.id === store.currentCase?.id ? store.activeVersion?.id : current.activeVersionId;
+          const latest = current.runs.find(run => run.versionId === activeVersionId) ?? current.runs[0];
+          const summary = {
+            id: current.id, name: current.name, description: current.description,
+            symbols: current.symbols, startDate: current.startDate, endDate: current.endDate, initialCapital: current.initialCapital,
+            activeVersionId,
+            versions: current.versions.slice(-10).map(version => ({ id: version.id, name: version.definition.name, confirmed: Boolean(version.confirmed || version.confirmedAt), evaluationInformed: version.evaluationInformed })),
+            versionCount: current.versions.length,
+            latestRun: latest ? { id: latest.id, versionId: latest.versionId, status: latest.status, progress: latest.progress, error: latest.error,
+              summaryLabel: latest.result?.summaryLabel, metrics: latest.result?.metrics, verdicts: latest.result?.verdicts, invalidReason: latest.result?.invalidReason } : null,
+            runCount: current.runs.length,
+            replayEligibleVersionIds: current.versions.filter(version => {
+              const run = current.runs.find(item => item.versionId === version.id && item.status === "completed" && item.result);
+              return run && !["invalid", "fragile", "reject"].includes(String(run.result?.summaryLabel).toLowerCase());
+            }).map(version => version.id),
+            replay: current.replays[0] ? { id: current.replays[0].id, versionId: current.replays[0].versionId, status: current.replays[0].status } : null,
+          };
+          const strategy = {
+            id: current.id, activeVersionId,
+            version: current.versions.find(version => version.id === activeVersionId) ?? null,
+          };
+          return state(`Returned case ${requestedId}. Mutations require this case to be open in the app.`, { case: input.detail === "full" ? current : input.detail === "strategy" ? strategy : summary });
         }),
       },
       {
         name: "list_indicator_catalog",
         title: "List indicator catalog",
-        description: "List deterministic indicators, their parameters, allowed sources, and output types before drafting a strategy or custom indicator.",
-        inputSchema: object({}),
+        description: "Search or page indicator summaries. Pass ids to retrieve exact parameters and allowed sources before drafting. Large details use read_tool_result pages.",
+        inputSchema: object({
+          query: { type: "string", maxLength: 100 },
+          ids: { type: "array", minItems: 1, maxItems: 3, uniqueItems: true, items: id },
+          offset: { type: "integer", minimum: 0 }, limit: { type: "integer", minimum: 1, maximum: 10 },
+        }),
         annotations: { readOnlyHint: true, untrustedContentHint: true },
-        execute: execute(async (_input, signal) => state(
-          "Returned the supported indicator catalog.",
-          await agentApi("/api/indicators", signal),
+        execute: execute(async (input, signal) => state(
+          "Returned the requested indicator page. Follow nextOffset for more; pass ids for exact parameters.",
+          catalogPage(await agentApi("/api/indicators", signal), input),
         )),
+      },
+      {
+        name: "read_tool_result", title: "Read tool result",
+        description: "Read a bounded page of a large tool result. Concatenate jsonText pages in offset order, then parse JSON. Results expire after five minutes or when the case/session changes.",
+        inputSchema: object({ resultId: id, offset: { type: "integer", minimum: 0, default: 0 } }, ["resultId"]),
+        annotations: { readOnlyHint: true, untrustedContentHint: true },
+        execute: execute(async input => state("Returned one result page. Continue at nextOffset until it is null.", results.read(String(input.resultId), Number(input.offset ?? 0)))),
       },
       {
         name: "create_strategy_draft",
@@ -378,7 +427,7 @@ export function useWebMcp(enabled: Readonly<Ref<boolean>> = ref(true)): DeepRead
           const runId = await store.runCourt(input.dataSnapshotPolicy as DataSnapshotPolicy | undefined, "balanced", "agent", signal);
           if (!runId) throw new Error(store.error ?? "Court did not create a completed run.");
           const run = store.currentCase?.runs.find((item) => item.id === runId);
-          return state(`Court run ${runId} completed. Call get_case_context, then inspect the weakest returned verdict.`, {
+          return state(`Court run ${runId} ended with status ${run?.status ?? "unknown"}. Call get_case_context for its verdicts or invalid reason.`, {
             changedRunId: runId,
             runId,
             runState: run?.status ?? "completed",
@@ -390,7 +439,7 @@ export function useWebMcp(enabled: Readonly<Ref<boolean>> = ref(true)): DeepRead
       });
     }
 
-    if (store.courtComplete) result.push(
+    if (store.courtComplete && !store.courtInvalid) result.push(
       {
         name: "inspect_failure_period",
         title: "Inspect failure period",
@@ -467,23 +516,34 @@ export function useWebMcp(enabled: Readonly<Ref<boolean>> = ref(true)): DeepRead
       },
     );
 
-    if (store.replay) result.push({
+    if (store.monitoringCandidate) result.push({
       name: "get_monitoring_status",
       title: "Get monitoring status",
-      description: "Read the active replay-probation state together with any saved latest-completed-bar evaluation. This tool does not fetch, advance, or persist market state.",
+      description: "Read saved latest-completed-bar evidence for a confirmed version, plus its replay if present. Does not fetch new prices. Use refresh_monitoring for a new evaluation.",
       inputSchema: webMcpSchemaContract.monitoringInput,
       annotations: { readOnlyHint: true, untrustedContentHint: true },
       execute: execute(async (input, signal) => {
         visibleCase(input);
         const requested = String(input.strategyVersionId);
         const replay = store.replay;
-        if (!replay || replay.versionId !== requested) throw new Error("Use the strategyVersionId from the active replay probation.");
         const [probation, monitoring] = await Promise.all([
-          agentApi(`/api/replay/${encodeURIComponent(replay.id)}/status`, signal),
+          replay?.versionId === requested ? agentApi(`/api/replay/${encodeURIComponent(replay.id)}/status`, signal) : Promise.resolve(null),
           store.loadMonitoringStatus(requested, { refresh: false, actor: "agent", signal }),
         ]);
         if (!monitoring) throw new Error(store.monitoringError ?? "Latest-bar monitoring could not be loaded.");
         return state(`Returned monitoring and replay-probation state for strategy version ${requested}.`, { probation, latestBar: monitoring });
+      }),
+    }, {
+      name: "refresh_monitoring", title: "Refresh monitoring",
+      description: "Fetch market data and persist a new latest-completed-bar evaluation for a confirmed version. Use only when the user requests a fresh check. Does not advance replay or place orders.",
+      inputSchema: object({ caseId, strategyVersionId: versionId, dataSnapshotPolicy: { type: "string", enum: ["refresh", "frozen"], default: "refresh" } }, ["caseId", "strategyVersionId"]),
+      annotations: { readOnlyHint: false, untrustedContentHint: true },
+      execute: execute(async (input, signal) => {
+        visibleCase(input);
+        const monitoring = await store.loadMonitoringStatus(String(input.strategyVersionId), { refresh: true, dataSnapshotPolicy: input.dataSnapshotPolicy as "refresh" | "frozen" | undefined, actor: "agent", signal });
+        if (!monitoring) throw new Error(store.monitoringError ?? "Latest-bar monitoring could not be refreshed.");
+        store.activeTab = "probation";
+        return state("Saved a latest-bar evaluation. Historical replay was not advanced.", monitoring, store.monitoringEvaluation?.id ? [store.monitoringEvaluation.id] : []);
       }),
     });
 
@@ -569,6 +629,7 @@ export function useWebMcp(enabled: Readonly<Ref<boolean>> = ref(true)): DeepRead
   watch(() => [enabled.value, store.currentCase?.id, store.confirmed, store.latestRun?.status, store.variants.length, store.replay?.id, store.monitoringCandidate?.id], sync, { immediate: true });
   const dispose = () => {
     disposed = true;
+    results.clear();
     disposeWebMcpTools(registrations);
     store.webMcpStatus = "unsupported";
     store.webMcpExpectedToolNames = [];

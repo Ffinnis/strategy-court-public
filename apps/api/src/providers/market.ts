@@ -257,21 +257,47 @@ interface AlpacaResponse {
   next_page_token?: string | null;
 }
 
+/** Covers both response headers and body reads, even if a transport ignores abort. */
+async function withMarketTimeout<T>(operation: (signal: AbortSignal) => Promise<T>, timeoutMs: number, parent?: AbortSignal): Promise<T> {
+  const controller = new AbortController();
+  const signal = parent ? AbortSignal.any([parent, controller.signal]) : controller.signal;
+  const issue = new ApiError(504, "market_provider_timeout", "Alpaca did not respond within the market-data deadline. Retry the run or choose Frozen snapshot.");
+  let rejectAbort: (() => void) | undefined;
+  const interrupted = new Promise<never>((_resolve, reject) => {
+    rejectAbort = () => reject(signal.reason ?? issue);
+    signal.addEventListener("abort", rejectAbort, { once: true });
+  });
+  const timer = setTimeout(() => controller.abort(issue), timeoutMs);
+  try {
+    signal.throwIfAborted();
+    return await Promise.race([operation(signal), interrupted]);
+  } finally {
+    clearTimeout(timer);
+    if (rejectAbort) signal.removeEventListener("abort", rejectAbort);
+  }
+}
+
 export class AlpacaMarketProvider implements MarketProvider {
   constructor(
     private readonly apiKey: string,
     private readonly apiSecret: string,
     private readonly baseUrl = process.env.ALPACA_DATA_URL || "https://data.alpaca.markets",
     private readonly feed = process.env.ALPACA_FEED || "iex",
-    private readonly fetcher: typeof fetch = fetch,
+    private readonly fetcher: (input: string | URL | Request, init?: RequestInit) => Promise<Response> = fetch,
+    private readonly deadlines = { requestMs: 15_000, snapshotMs: 60_000 },
   ) {}
 
   async getSnapshot(input: MarketRequest): Promise<SnapshotRecord> {
+    return withMarketTimeout(signal => this.fetchSnapshot(input, signal), this.deadlines.snapshotMs);
+  }
+
+  private async fetchSnapshot(input: MarketRequest, signal: AbortSignal): Promise<SnapshotRecord> {
     const bars: Bar[] = [];
     let pageToken: string | undefined;
     const seenPageTokens = new Set<string>();
     let pageCount = 0;
     do {
+      signal.throwIfAborted();
       pageCount += 1;
       if (pageCount > 1_000) throw new ApiError(502, "market_pagination_limit", "Alpaca pagination exceeded 1,000 pages");
       if (pageToken) {
@@ -288,19 +314,21 @@ export class AlpacaMarketProvider implements MarketProvider {
       url.searchParams.set("sort", "asc");
       url.searchParams.set("limit", "10000");
       if (pageToken) url.searchParams.set("page_token", pageToken);
-      const response = await this.fetcher(url, {
-        headers: {
-          "APCA-API-KEY-ID": this.apiKey,
-          "APCA-API-SECRET-KEY": this.apiSecret,
-        },
-      });
-      if (!response.ok) {
-        throw new ApiError(502, "market_provider_error", `Alpaca returned ${response.status}`, {
-          provider: "alpaca",
-          status: response.status,
-        });
-      }
-      const body = await response.json() as AlpacaResponse;
+      const body = await withMarketTimeout(async requestSignal => {
+        try {
+          const response = await this.fetcher(url, {
+            signal: requestSignal,
+            headers: { "APCA-API-KEY-ID": this.apiKey, "APCA-API-SECRET-KEY": this.apiSecret },
+          });
+          if (!response.ok) throw new ApiError(502, "market_provider_error", `Alpaca returned ${response.status}`, { provider: "alpaca", status: response.status });
+          return await response.json() as AlpacaResponse;
+        } catch (error) {
+          requestSignal.throwIfAborted();
+          if (error instanceof ApiError) throw error;
+          throw new ApiError(502, "market_provider_unavailable", "Could not read Alpaca market data. Retry the run or choose Frozen snapshot.");
+        }
+      }, this.deadlines.requestMs, signal);
+      signal.throwIfAborted();
       for (const [symbol, symbolBars] of Object.entries(body.bars ?? {})) {
         for (const bar of symbolBars) {
           bars.push({

@@ -114,6 +114,26 @@ const variant = (stopLossPercent: number) => ({
 });
 
 describe("Stage C verifier regressions", () => {
+  test("uses a saved snapshot without constructing the unavailable Alpaca provider", async () => {
+    const app = await harness.app({ courtExecutor: courtResult });
+    const { caseId, versionId } = await setup(app);
+    const savedKey = process.env.ALPACA_API_KEY;
+    const savedSecret = process.env.ALPACA_API_SECRET;
+    delete process.env.ALPACA_API_KEY;
+    delete process.env.ALPACA_API_SECRET;
+    try {
+      const started = await request(app, "POST", `/api/cases/${caseId}/court-runs`, { strategyVersionId: versionId, dataSnapshotPolicy: "prefer_cache" });
+      await app.queue.idle();
+      const loaded = await request(app, "GET", `/api/court-runs/${started.body.run.id}`);
+      expect(loaded.body.run.status).toBe("completed");
+    } finally {
+      if (savedKey === undefined) delete process.env.ALPACA_API_KEY;
+      else process.env.ALPACA_API_KEY = savedKey;
+      if (savedSecret === undefined) delete process.env.ALPACA_API_SECRET;
+      else process.env.ALPACA_API_SECRET = savedSecret;
+    }
+  });
+
   test("applies PostgreSQL migrations idempotently and persists numeric versions", async () => {
     const database = await harness.createDatabase();
     const first = await harness.app({ courtExecutor: courtResult }, database);

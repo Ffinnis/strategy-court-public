@@ -540,8 +540,7 @@ export async function createApp(options: AppOptions = {}): Promise<ApiApp> {
         };
         const cached = policy === "prefer_cache" ? await store.findSnapshot(marketRequest.symbols, marketRequest.dateFrom, marketRequest.dateTo) : null;
         const providerPolicy = policy === "prefer_cache" ? "refresh" : policy;
-        const provider = providerOverride ?? options.marketProvider ?? selectMarketProvider(providerPolicy);
-        const snapshot = cached ?? await store.saveSnapshot(await provider.getSnapshot(marketRequest));
+        const snapshot = cached ?? await store.saveSnapshot(await (providerOverride ?? options.marketProvider ?? selectMarketProvider(providerPolicy)).getSnapshot(marketRequest));
         await store.updateRun(run.id, { dataSnapshotId: snapshot.id, progress: { percent: 35, stage: "baseline" } }, ownerUserId);
         const execution = await courtExecutor({
           courtCase,

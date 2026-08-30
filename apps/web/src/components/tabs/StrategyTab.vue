@@ -336,7 +336,7 @@ async function createManualDraft() {
       </div>
 
       <div v-if="!store.confirmed" class="approval-actions">
-        <div><LockKeyhole :size="15" /><span>Confirmation creates immutable version 1. Later changes create a new version.</span></div>
+        <div><LockKeyhole :size="15" /><span>Confirmation locks this version for testing. Later changes create a new version.</span></div>
         <button class="button" type="button" :disabled="store.mutating" @click="store.confirmStrategy()"><Check :size="16" />{{ store.mutating ? "Confirming" : "Confirm this interpretation" }}</button>
       </div>
     </section>

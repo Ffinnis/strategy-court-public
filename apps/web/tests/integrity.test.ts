@@ -224,7 +224,7 @@ describe("connected-state integrity", () => {
     expect(store.replay?.id).toBe("replay-1");
   });
 
-  test("real WebMCP registration is progressive, strict, and keeps monitoring status read-only during probation", async () => {
+  test("WebMCP registration separates saved monitoring from explicit refresh before and during probation", async () => {
     setActivePinia(createPinia());
     const store = useCourtStore();
     const casePayload = {
@@ -243,7 +243,7 @@ describe("connected-state integrity", () => {
     const enabled = ref(true);
     useWebMcp(enabled);
     await new Promise((resolve) => setTimeout(resolve, 0));
-    expect([...registered.keys()].sort()).toEqual(["create_custom_indicator", "create_strategy_draft", "get_case_context", "list_indicator_catalog"]);
+    expect([...registered.keys()].sort()).toEqual(["create_custom_indicator", "create_strategy_draft", "get_case_context", "list_indicator_catalog", "read_tool_result"]);
     expect(registered.has("get_monitoring_status")).toBe(false);
 
     store.currentCase.versions[0]!.confirmed = true;
@@ -251,7 +251,8 @@ describe("connected-state integrity", () => {
     casePayload.versions[0]!.confirmed = true;
     casePayload.versions[0]!.confirmedAt = "2026-08-28T10:00:00.000Z";
     await new Promise((resolve) => setTimeout(resolve, 0));
-    expect(registered.has("get_monitoring_status")).toBe(false);
+    expect(registered.has("get_monitoring_status")).toBe(true);
+    expect(registered.has("refresh_monitoring")).toBe(true);
     expect(registered.has("create_strategy_draft")).toBe(false);
     expect(registered.has("run_court")).toBe(true);
     const runCourtSchema = registered.get("run_court")!.inputSchema as { required: string[]; properties: Record<string, { default?: unknown }> };
@@ -295,6 +296,24 @@ describe("connected-state integrity", () => {
     expect((catalogResponse.data as Record<string, unknown>).indicators).toHaveLength(1);
     const contextResponse = await registered.get("get_case_context")!.execute({ caseId: "c1" }) as Record<string, unknown>;
     expect((contextResponse.currentState as Record<string, unknown>).confirmed).toBe(true);
+    expect((contextResponse.data as { case: object }).case).not.toHaveProperty("audit");
+    const strategyResponse = await registered.get("get_case_context")!.execute({ detail: "strategy" }) as Record<string, any>;
+    expect(strategyResponse.data.case.version).toMatchObject({ id: "v1", definition: {}, confirmed: true });
+    expect(strategyResponse.data.case).not.toHaveProperty("runs");
+    expect(strategyResponse.data.case.activeVersionId).toBe(strategyResponse.currentState.activeVersionId);
+    const beforeReplay = await registered.get("get_monitoring_status")!.execute({ caseId: "c1", strategyVersionId: "v1" }) as Record<string, any>;
+    expect(beforeReplay.ok).toBe(true);
+    expect(beforeReplay.data.probation).toBeNull();
+    expect(requests.at(-1)).toMatchObject({ method: "GET", actor: "agent" });
+    expect(requests.some(item => item.path.includes("/api/replay/"))).toBe(false);
+    expect(registered.get("refresh_monitoring")!.annotations?.readOnlyHint).toBe(false);
+    const refreshed = await registered.get("refresh_monitoring")!.execute({ caseId: "c1", strategyVersionId: "v1", dataSnapshotPolicy: "frozen" }) as Record<string, any>;
+    expect(refreshed.ok).toBe(true);
+    expect(refreshed.changedIds).toEqual(["evaluation-2"]);
+    expect(requests.at(-1)).toMatchObject({ method: "POST", actor: "agent", body: { strategyVersionId: "v1", dataSnapshotPolicy: "frozen" } });
+    expect(store.replay).toBeUndefined();
+    const notConfirmed = await registered.get("refresh_monitoring")!.execute({ caseId: "c1", strategyVersionId: "other" }) as Record<string, any>;
+    expect(notConfirmed.ok).toBe(false);
     store.currentCase!.runs.unshift(normalizeRun({
       id: "run-1", strategyVersionId: "v1", status: "completed", progress: 100,
       result: { summaryLabel: "Surviving", metrics: { netReturnPercent: 2 }, verdicts: [{ id: "risk", category: "risk", status: "Pass" }] },
