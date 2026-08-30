@@ -282,7 +282,7 @@ export class AlpacaMarketProvider implements MarketProvider {
     private readonly apiKey: string,
     private readonly apiSecret: string,
     private readonly baseUrl = process.env.ALPACA_DATA_URL || "https://data.alpaca.markets",
-    private readonly feed = process.env.ALPACA_FEED || "iex",
+    private readonly feed = process.env.ALPACA_FEED || "sip",
     private readonly fetcher: (input: string | URL | Request, init?: RequestInit) => Promise<Response> = fetch,
     private readonly deadlines = { requestMs: 15_000, snapshotMs: 60_000 },
   ) {}
