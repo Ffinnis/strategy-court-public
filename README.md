@@ -160,6 +160,8 @@ Schemas reject extra fields and executable code. The API validates requests agai
 
 ## Publication and attribution
 
+Original Strategy Court code and documentation are licensed under [MIT](./LICENSE). This license does not cover third-party market data, research screenshots, or dependencies, which retain their own rights and terms.
+
 See [third-party materials](./docs/third-party-materials.md) before publishing or relicensing this repository. The installed dependencies retain their own licenses; recorded market data and design-reference screenshots are not original Strategy Court code. Chart attribution is available from the app footer.
 
 Before submitting, verify that GitHub displays the chosen open-source license and that the repository is public. Follow the [official submission rules](https://webmcp.devpost.com/rules) and [current FAQ](https://webmcp.devpost.com/resources). Leave the submitted code and live app unchanged after the deadline until winners are announced; use a separate copy for later development.

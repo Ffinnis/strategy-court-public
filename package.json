@@ -2,6 +2,7 @@
   "name": "strategy-court",
   "private": true,
   "version": "0.1.0",
+  "license": "MIT",
   "packageManager": "bun@1.3.14",
   "workspaces": [
     "apps/*",

@@ -2,6 +2,8 @@
 
 This inventory separates original application code from material whose rights are held by others. It is not a grant of rights to those materials and does not establish permission to redistribute market data.
 
+The root [MIT license](../LICENSE) applies to original Strategy Court code and documentation only. It does not relicense any third-party material listed below.
+
 | Material | Location | Source and treatment |
 | --- | --- | --- |
 | Lightweight Charts | Installed frontend dependency; candle and evidence charts | TradingView, Apache-2.0. Preserve its license, copyright notice, and user-visible TradingView link. The app's Chart attribution link supplies the notice and license. |
