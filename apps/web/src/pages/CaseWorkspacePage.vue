@@ -132,7 +132,7 @@ watch(() => store.activeTab, settleTabScroll);
 .workspace-tabs {
   position: sticky;
   z-index: 40;
-  top: 64px;
+  top: var(--app-header-height);
   display: flex;
   width: min(var(--workspace-shell), calc(100% - var(--workspace-gutter) - var(--workspace-gutter)));
   min-height: 44px;
@@ -180,7 +180,7 @@ watch(() => store.activeTab, settleTabScroll);
 .workspace-messages {
   position: fixed;
   z-index: 90;
-  top: 82px;
+  top: calc(var(--app-header-height) + 18px);
   right: 24px;
   display: grid;
   width: min(420px, calc(100% - 32px));
@@ -228,8 +228,8 @@ watch(() => store.activeTab, settleTabScroll);
   .loading-grid { grid-template-columns: 1fr; }
 }
 @media (max-width: 720px) {
-  .workspace-tabs { top: 60px; width: 100%; gap: 20px; padding: 7px 16px 9px; }
+  .workspace-tabs { width: 100%; gap: 20px; padding: 7px 16px 9px; }
   .workspace-layout { width: 100%; padding: 26px 16px 78px; }
-  .workspace-messages { top: 76px; right: 16px; }
+  .workspace-messages { top: calc(var(--app-header-height) + 16px); right: 16px; }
 }
 </style>
