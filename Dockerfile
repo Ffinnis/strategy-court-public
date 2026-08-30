@@ -31,6 +31,7 @@ ENV NODE_ENV=production
 
 COPY --from=build --chown=bun:bun /app/apps/api/dist apps/api/dist
 COPY --from=build --chown=bun:bun /app/apps/web/dist apps/web/dist
+COPY --chown=bun:bun LICENSE ./LICENSE
 
 USER bun
 
