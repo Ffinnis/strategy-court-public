@@ -1,65 +1,286 @@
 <script setup lang="ts">
-import { onMounted, ref } from "vue";
+import { ref, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
-import { ArrowRight, Check, FlaskConical } from "lucide-vue-next";
+import { ArrowDown, ArrowRight, ArrowUpRight, Check, Plus } from "lucide-vue-next";
+import LandingMarketPreview from "@/components/LandingMarketPreview.vue";
 import { useCourtStore } from "@/stores/court";
 import { authClient } from "@/services/auth";
+import { LANDING_MARKET_SOURCE } from "@/data/landingMarket";
 
 const router = useRouter();
 const route = useRoute();
 const store = useCourtStore();
 const sessionState = authClient.useSession();
 const sampleBusy = ref(false);
-async function openSample(){
+const sampleError = ref("");
+let sampleRequestHandled = false;
+
+async function openSample() {
+  if (sampleBusy.value || sessionState.value.isPending) return;
+  sampleError.value = "";
   if (!sessionState.value.data?.user) {
     await router.push({ name: "auth", query: { redirect: "/?sample=1" } });
     return;
   }
-  sampleBusy.value=true;
-  const id=await store.createSample();
-  sampleBusy.value=false;
-  if(id)await router.push(`/case/${id}`);
+  sampleBusy.value = true;
+  try {
+    const id = await store.createSample();
+    if (id) await router.push(`/case/${id}`);
+    else sampleError.value = store.error || "Could not open the sample. Please try again.";
+  } catch {
+    sampleError.value = "Could not open the sample. Please try again.";
+  } finally {
+    sampleBusy.value = false;
+  }
 }
-onMounted(() => { if (route.query.sample === "1" && sessionState.value.data?.user) void openSample(); });
-const tests=["Evidence sufficiency","Out-of-sample","Parameter stability","Execution resilience","Regime stability","Profit concentration","Risk profile"];
+
+watch(
+  () => [route.query.sample, sessionState.value.isPending, sessionState.value.data?.user?.id] as const,
+  ([requested, pending, userId]) => {
+    if (requested !== "1") sampleRequestHandled = false;
+    if (requested === "1" && !pending && userId && !sampleRequestHandled) {
+      sampleRequestHandled = true;
+      void openSample();
+    }
+  },
+  { immediate: true },
+);
+
+const tests = [
+  { name: "Evidence sufficiency", question: "Enough trades to draw a conclusion?", detail: "Counts completed trades in the evaluation period. A small sample stays inconclusive, even when its return looks good." },
+  { name: "Out-of-sample", question: "Does it work on unseen history?", detail: "Separates development and evaluation periods. The confirmed rules are tested on the evaluation period without changing them." },
+  { name: "Parameter stability", question: "What if the settings move a little?", detail: "Tests nearby supported parameter values. It shows when a result depends on one unusually precise setting." },
+  { name: "Execution resilience", question: "Do costs and delayed fills erase the result?", detail: "Repeats the test with execution stresses, including higher transaction costs and delayed fills." },
+  { name: "Regime stability", question: "Does it depend on one kind of market?", detail: "Breaks down results by market trend and volatility. Strong and weak regimes remain visible in the evidence." },
+  { name: "Profit concentration", question: "Are a few trades doing all the work?", detail: "Measures how much of the net profit comes from the best trades. A handful of winners can hide a fragile result." },
+  { name: "Risk profile", question: "What happened between the highs?", detail: "Examines drawdown, recovery and time underwater. The path to the final balance matters as much as the balance itself." },
+];
+const steps = [
+  { name: "Write the rules", detail: "Your entry, exit, symbols and costs. In plain language or with an agent." },
+  { name: "Lock the strategy", detail: "Review the exact logic before the Court sees the results." },
+  { name: "Inspect the evidence", detail: "Follow each finding back to the chart, the trades and the test." },
+];
 </script>
 
 <template>
-  <main class="landing">
-    <section class="hero">
-      <div class="hero__copy">
-        <h1>Test your strategy before risking capital.</h1>
-        <p>Define the rules, run seven robustness tests, and inspect every failure.</p>
+  <div class="landing">
+    <section class="hero" aria-labelledby="landing-heading">
+      <h1 id="landing-heading">Find the weak spot.<br><span>Before you trade.</span></h1>
+      <div class="hero__action-area">
+        <p>Put your trading rules through seven robustness tests. See where they hold, and where they don't.</p>
         <div class="hero__actions">
-          <RouterLink class="button" to="/new">Create strategy <ArrowRight :size="15" /></RouterLink>
-          <button class="button button--secondary" type="button" :disabled="sampleBusy" @click="openSample"><FlaskConical :size="15" />{{ sampleBusy ? "Opening…" : "Open sample" }}</button>
+          <RouterLink class="button hero__primary" to="/new">Create strategy <ArrowUpRight :size="17" /></RouterLink>
+          <button class="hero__sample" type="button" :disabled="sampleBusy || sessionState.isPending" @click="openSample">
+            {{ sampleBusy ? "Opening sample…" : "Open sample" }} <ArrowRight :size="15" />
+          </button>
         </div>
-      </div>
-
-      <div class="preview" aria-label="Example robustness test result">
-        <header class="preview__header"><div><strong>RSI pullback</strong><span>SPY · 2020–2024</span></div><span class="preview__status">Fragile</span></header>
-        <div class="preview__chart" aria-hidden="true">
-          <svg viewBox="0 0 900 230" preserveAspectRatio="none"><path class="grid" d="M0 45H900M0 115H900M0 185H900"/><path class="benchmark" d="M0 190L90 179L180 166L270 153L360 139L450 122L540 103L630 82L720 67L810 49L900 31"/><path class="strategy" d="M0 193L70 183L140 188L210 154L280 144L350 116L420 132L490 91L560 72L630 94L700 61L770 76L840 39L900 49"/></svg>
-        </div>
-        <div class="preview__metrics"><div><span>Net return</span><strong>+58.4%</strong></div><div><span>Max drawdown</span><strong>−18.6%</strong></div><div><span>Trades</span><strong>24</strong></div><div><span>Tests passed</span><strong>3 / 7</strong></div></div>
-        <div class="preview__findings"><div><span>Parameter stability</span><strong>Failed</strong></div><div><span>Regime stability</span><strong>Inconclusive</strong></div><div><span>Execution resilience</span><strong>Passed</strong></div></div>
+        <p v-if="sampleError" class="sample-error" role="alert">{{ sampleError }}</p>
+        <span v-else class="hero__note">Historical tests. No orders placed.</span>
       </div>
     </section>
 
-    <section class="test-section">
-      <div><h2>Seven checks. One record.</h2><p>A profitable curve cannot hide a weak test.</p></div>
-      <ol><li v-for="(test,index) in tests" :key="test"><span>{{ String(index+1).padStart(2,"0") }}</span><strong>{{ test }}</strong><Check :size="14" /></li></ol>
+    <section class="investigation" aria-label="Historical chart and example trading rules">
+      <header class="investigation__header">
+        <div class="investigation__instrument"><strong>{{ LANDING_MARKET_SOURCE.symbol }}</strong><span>Nasdaq 100 <i>·</i> 2024</span></div>
+        <span class="investigation__status"><span />Historical preview</span>
+      </header>
+      <div class="investigation__body">
+        <LandingMarketPreview />
+        <aside class="strategy-note" aria-labelledby="example-strategy-heading">
+          <span class="strategy-note__label">An example rule</span>
+          <h2 id="example-strategy-heading">Follow the<br>120-day trend.</h2>
+          <div class="strategy-note__rules">
+            <div><ArrowUpRight :size="17" /><p><strong>Buy</strong><span>Close above SMA 120</span></p></div>
+            <div><ArrowDown :size="17" /><p><strong>Sell</strong><span>Close below SMA 120</span></p></div>
+          </div>
+          <p class="strategy-note__execution"><Check :size="13" />Next open <span>·</span> Long only</p>
+          <div class="strategy-note__question">
+            <p>The rule is simple.<br>Is the result robust?</p>
+            <a href="#tests">See what gets tested <ArrowDown :size="14" /></a>
+          </div>
+        </aside>
+      </div>
+      <footer class="investigation__source">
+        <span>Saved {{ LANDING_MARKET_SOURCE.provider }} prices, adjusted for splits and dividends.</span>
+        <span>Historical data, not a live signal.</span>
+      </footer>
     </section>
 
-    <section class="steps">
-      <div><h2>How it works</h2><p>The rules are fixed before results are shown.</p></div>
-      <ol><li><span>1</span><div><strong>Describe the strategy</strong><p>Enter the setup, symbols, dates, and costs.</p></div></li><li><span>2</span><div><strong>Confirm the rules</strong><p>Review the structured entry, exit, and risk logic.</p></div></li><li><span>3</span><div><strong>Run the tests</strong><p>Inspect results, failures, trades, and assumptions.</p></div></li></ol>
+    <section id="tests" class="tests-section" aria-labelledby="tests-heading">
+      <div class="section-intro">
+        <span class="section-intro__context">The Court</span>
+        <h2 id="tests-heading">A return number<br> leaves things out.</h2>
+        <p>Open any test to see the question behind it. A good-looking curve doesn't skip the scrutiny.</p>
+        <a href="#process" class="text-link">How an investigation works <ArrowRight :size="15" /></a>
+      </div>
+      <div class="test-list">
+        <details v-for="(test, index) in tests" :key="test.name" class="test-row">
+          <summary>
+            <span class="test-row__number">{{ String(index + 1).padStart(2, '0') }}</span>
+            <span class="test-row__copy"><strong>{{ test.name }}</strong><span>{{ test.question }}</span></span>
+            <Plus :size="18" class="test-row__toggle" />
+          </summary>
+          <p>{{ test.detail }}</p>
+        </details>
+      </div>
     </section>
-  </main>
+
+    <section id="process" class="process-section" aria-labelledby="process-heading">
+      <header><div><span class="section-intro__context">Your investigation</span><h2 id="process-heading">From a rule to a record.</h2></div><span class="process-section__note">Every change stays in the history.</span></header>
+      <ol class="process-list">
+        <li v-for="(step, index) in steps" :key="step.name"><span class="process-list__number">{{ index + 1 }}</span><h3>{{ step.name }}</h3><p>{{ step.detail }}</p></li>
+      </ol>
+      <div class="agent-note"><span class="agent-note__mark"><Check :size="14" /></span><p>Work by hand or with a WebMCP agent. <span>You confirm the rules before a test runs.</span></p></div>
+    </section>
+
+    <section class="landing-close" aria-label="Create your first strategy">
+      <h2>Bring a rule.<br><span>Leave with evidence.</span></h2>
+      <RouterLink class="button hero__primary" to="/new">Create strategy <ArrowUpRight :size="17" /></RouterLink>
+    </section>
+  </div>
 </template>
 
 <style scoped lang="scss">
-.landing{max-width:1180px;margin:0 auto;padding:0 24px 110px}.hero{display:grid;min-height:690px;align-content:center;justify-items:center;gap:58px;padding:80px 0 70px;text-align:center}.hero__copy{display:grid;justify-items:center}.hero h1{max-width:850px;margin:0;font-size:clamp(48px,6.5vw,78px);font-weight:650;line-height:1.02;letter-spacing:-.055em}.hero__copy>p{max-width:610px;margin:23px 0 27px;color:#a1a1aa;font-size:17px;line-height:1.55}.hero__actions{display:flex;gap:8px}.preview{width:100%;overflow:hidden;border:1px solid #27272a;border-radius:12px;background:#111;text-align:left}.preview__header{display:flex;align-items:center;justify-content:space-between;padding:18px 20px;border-bottom:1px solid #27272a}.preview__header div{display:grid;gap:4px}.preview__header strong{font-size:14px}.preview__header span{color:#71717a;font-size:11px}.preview__status{padding:5px 9px!important;border:1px solid #3f3f46;border-radius:999px;color:#e4e4e7!important;background:#18181b}.preview__chart{padding:30px 22px 10px}.preview__chart svg{display:block;width:100%;height:230px}.grid{fill:none;stroke:#27272a;stroke-width:1;vector-effect:non-scaling-stroke}.benchmark{fill:none;stroke:#52525b;stroke-width:1.5;stroke-dasharray:5 5;vector-effect:non-scaling-stroke}.strategy{fill:none;stroke:#f4f4f5;stroke-width:2;vector-effect:non-scaling-stroke}.preview__metrics{display:grid;grid-template-columns:repeat(4,1fr);border-top:1px solid #27272a;border-bottom:1px solid #27272a}.preview__metrics div{display:grid;gap:6px;padding:16px 18px;border-left:1px solid #27272a}.preview__metrics div:first-child{border-left:0}.preview__metrics span{color:#71717a;font-size:10px}.preview__metrics strong{font-size:20px}.preview__findings{display:grid;grid-template-columns:repeat(3,1fr);gap:1px;background:#27272a}.preview__findings div{display:flex;justify-content:space-between;gap:14px;padding:14px 18px;background:#111;font-size:11px}.preview__findings span{color:#a1a1aa}.preview__findings strong{font-weight:550}.test-section,.steps{display:grid;grid-template-columns:.75fr 1.25fr;gap:80px;padding:96px 0;border-top:1px solid #27272a}.test-section h2,.steps h2{margin:0;font-size:36px;font-weight:620;letter-spacing:-.035em}.test-section>div p,.steps>div>p{margin:12px 0 0;color:#71717a;font-size:14px}.test-section ol,.steps ol{margin:0;padding:0;list-style:none}.test-section li{display:grid;grid-template-columns:34px 1fr auto;align-items:center;padding:15px 0;border-bottom:1px solid #27272a}.test-section li:first-child{border-top:1px solid #27272a}.test-section li span{color:#71717a;font-size:10px}.test-section li strong{font-size:13px;font-weight:500}.test-section li svg{color:#71717a}.steps li{display:grid;grid-template-columns:32px 1fr;gap:14px;padding:20px 0;border-bottom:1px solid #27272a}.steps li:first-child{border-top:1px solid #27272a}.steps li>span{display:grid;width:24px;height:24px;place-items:center;border:1px solid #3f3f46;border-radius:6px;color:#a1a1aa;font-size:10px}.steps li strong{font-size:14px}.steps li p{margin:6px 0 0;color:#71717a;font-size:12px;line-height:1.55}
-@media(max-width:760px){.landing{padding-inline:16px}.hero{min-height:auto;padding-top:65px}.hero h1{font-size:50px}.hero__actions{display:grid;width:100%}.preview__metrics{grid-template-columns:1fr 1fr}.preview__metrics div:nth-child(odd){border-left:0}.preview__metrics div:nth-child(n+3){border-top:1px solid #27272a}.preview__findings{grid-template-columns:1fr}.test-section,.steps{grid-template-columns:1fr;gap:38px;padding:72px 0}}@media(max-width:430px){.hero h1{font-size:42px}.preview__chart{padding-inline:10px}.preview__metrics strong{font-size:17px}}
-.landing{position:relative}.landing::before{position:absolute;z-index:-1;top:-80px;left:50%;width:min(1050px,95vw);height:680px;border-radius:50%;content:"";background:radial-gradient(ellipse,rgba(255,255,255,.055),rgba(255,255,255,.012) 48%,transparent 72%);filter:blur(30px);transform:translateX(-50%);animation:landing-ambient 12s ease-in-out infinite alternate}@keyframes landing-ambient{to{transform:translate(-48%,25px) scale(1.04)}}.preview{border-color:#303030;border-radius:18px;background:#141414;box-shadow:inset 0 1px 0 rgba(255,255,255,.045),0 2px 4px rgba(0,0,0,.3),0 35px 90px rgba(0,0,0,.38);transition:transform 400ms cubic-bezier(.2,.8,.2,1),box-shadow 400ms ease}.preview:hover{transform:translateY(-4px);box-shadow:inset 0 1px 0 rgba(255,255,255,.055),0 3px 6px rgba(0,0,0,.32),0 45px 110px rgba(0,0,0,.48)}.preview__header{padding:21px 23px;border-bottom-color:rgba(255,255,255,.07)}.preview__chart{background:linear-gradient(180deg,rgba(255,255,255,.012),transparent)}.preview__metrics{border-color:rgba(255,255,255,.075)}.preview__metrics div{border-color:rgba(255,255,255,.065)}.preview__findings{background:rgba(255,255,255,.065)}.preview__findings div{background:#141414}.test-section,.steps{border-top-color:rgba(255,255,255,.07)}.test-section li,.steps li{border-bottom-color:rgba(255,255,255,.065);transition:padding 170ms ease,background 170ms ease}.test-section li:hover,.steps li:hover{padding-inline:12px;border-radius:10px;background:rgba(255,255,255,.026)}@media(prefers-reduced-motion:reduce){.landing::before{animation:none}}
+.landing { width: 100%; max-width: var(--workspace-shell); margin: 0 auto; padding: 0 var(--workspace-gutter); }
+.hero { display: grid; grid-template-columns: 1.25fr 1fr; align-items: end; gap: clamp(36px, 7vw, 110px); padding: 60px 0 42px; }
+.hero h1 { margin: 0; font-size: clamp(45px, 4.4vw, 66px); font-weight: 600; line-height: 1.06; letter-spacing: -.05em; }
+.hero h1 span { color: #85858a; }
+.hero__action-area { max-width: 415px; padding-bottom: 3px; }
+.hero__action-area > p:first-child { margin: 0 0 23px; color: #b4b4bb; font-size: 16px; line-height: 1.65; }
+.hero__actions { display: flex; align-items: center; flex-wrap: wrap; gap: 24px; }
+.hero__primary { min-height: 46px; gap: 22px; padding-inline: 19px; border-radius: 9px; box-shadow: 0 4px 18px rgba(0,0,0,.24); }
+.hero__sample { display: inline-flex; align-items: center; gap: 9px; min-height: 44px; padding: 0; border: 0; color: #d1d1d5; background: none; font-size: 13px; cursor: pointer; }
+.hero__sample:hover { color: #fff; }
+.hero__sample:disabled { opacity: .5; cursor: wait; }
+.hero__note { display: block; margin-top: 15px; color: #797980; font-size: 11px; }
+.sample-error { margin: 12px 0 0; color: #d8b2b2; font-size: 12px; line-height: 1.5; }
+.investigation { overflow: hidden; border: 1px solid #2b2b2b; border-radius: 14px; background: #101010; box-shadow: var(--shadow-main), inset 0 1px 0 rgba(255,255,255,.04); }
+.investigation__header { display: flex; align-items: center; justify-content: space-between; gap: 20px; padding: 19px 28px; border-bottom: 1px solid var(--line-subtle); }
+.investigation__instrument { display: flex; align-items: center; gap: 15px; }
+.investigation__instrument strong { font-size: 20px; font-weight: 650; letter-spacing: -.025em; }
+.investigation__instrument > span { color: var(--text-muted); font-size: 12px; }
+.investigation__instrument i { margin: 0 7px; font-style: normal; color: #555; }
+.investigation__status { display: inline-flex; align-items: center; gap: 7px; color: #a6a6ad; font-size: 11px; }
+.investigation__status > span { width: 5px; height: 5px; border-radius: 50%; background: #88888e; }
+.investigation__body { display: grid; grid-template-columns: minmax(0, 1fr) 285px; }
+.strategy-note { display: flex; flex-direction: column; align-items: flex-start; padding: 29px 28px 25px; border-left: 1px solid var(--line-subtle); }
+.strategy-note__label { color: #88888f; font-size: 11px; }
+.strategy-note h2 { margin: 13px 0 30px; color: #ededee; font-size: 27px; font-weight: 550; line-height: 1.2; letter-spacing: -.035em; }
+.strategy-note__rules { display: grid; gap: 23px; }
+.strategy-note__rules > div { display: flex; align-items: flex-start; gap: 12px; }
+.strategy-note__rules svg { margin-top: 1px; color: #939399; }
+.strategy-note__rules p { display: grid; gap: 6px; margin: 0; }
+.strategy-note__rules strong { font-size: 12px; font-weight: 550; }
+.strategy-note__rules span { color: #a5a5ac; font-size: 12px; }
+.strategy-note__execution { display: flex; align-items: center; gap: 6px; margin: 24px 0 0; color: #77777f; font-size: 10px; }
+.strategy-note__execution > span { margin: 0 2px; }
+.strategy-note__question { width: 100%; margin-top: auto; padding-top: 30px; }
+.strategy-note__question > p { margin: 0; padding-top: 21px; border-top: 1px solid var(--line-subtle); color: #c4c4ca; font-size: 15px; line-height: 1.6; }
+.strategy-note__question > a { display: inline-flex; align-items: center; gap: 10px; margin-top: 13px; color: #96969e; font-size: 11px; }
+.strategy-note__question > a:hover { color: #fff; }
+.investigation__source { display: flex; align-items: center; justify-content: space-between; gap: 18px; padding: 14px 28px; border-top: 1px solid var(--line-subtle); color: #7d7d84; font-size: 10px; line-height: 1.5; }
+.tests-section { display: grid; grid-template-columns: .85fr 1.35fr; gap: clamp(45px, 7vw, 115px); padding: 122px 0 106px; scroll-margin-top: 36px; }
+.section-intro { padding-top: 18px; }
+.section-intro__context { display: block; margin-bottom: 17px; color: #8b8b92; font-size: 12px; }
+.section-intro h2,.process-section h2 { margin: 0; font-size: clamp(30px, 3vw, 40px); font-weight: 550; line-height: 1.14; letter-spacing: -.04em; }
+.section-intro > p { max-width: 315px; margin: 22px 0; color: #929299; font-size: 14px; line-height: 1.7; }
+.text-link { display: inline-flex; align-items: center; gap: 10px; margin-top: 12px; color: #d0d0d4; font-size: 12px; }
+.text-link:hover { color: #fff; }
+.test-row { border-bottom: 1px solid var(--line-subtle); }
+.test-row:first-child { border-top: 1px solid var(--line-subtle); }
+.test-row summary { display: flex; align-items: center; gap: 18px; min-height: 85px; padding: 19px 0; cursor: pointer; list-style: none; }
+.test-row summary::-webkit-details-marker { display: none; }
+.test-row__number { align-self: flex-start; width: 24px; padding-top: 3px; color: #66666d; font-size: 11px; font-variant-numeric: tabular-nums; }
+.test-row__copy { display: grid; gap: 7px; }
+.test-row__copy strong { color: #dcdcdf; font-size: 15px; font-weight: 500; }
+.test-row__copy > span { color: #85858d; font-size: 12px; line-height: 1.45; }
+.test-row__toggle { flex-shrink: 0; margin-left: auto; color: #727279; transition: transform var(--motion-fast); }
+.test-row summary:hover .test-row__copy strong,.test-row summary:hover .test-row__toggle { color: #fff; }
+.test-row[open] .test-row__toggle { transform: rotate(45deg); }
+.test-row > p { max-width: 500px; margin: -1px 32px 23px 42px; color: #aaaab1; font-size: 13px; line-height: 1.75; }
+.process-section { padding: 69px 0 58px; border-top: 1px solid var(--line-subtle); scroll-margin-top: 32px; }
+.process-section > header { display: flex; align-items: flex-end; justify-content: space-between; gap: 24px; }
+.process-section__note { padding-bottom: 5px; color: #82828a; font-size: 12px; }
+.process-list { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 54px; margin: 51px 0 43px; padding: 0; list-style: none; }
+.process-list li { padding-top: 22px; border-top: 1px solid #323232; }
+.process-list__number { color: #727279; font-size: 12px; }
+.process-list h3 { margin: 19px 0 12px; color: #e2e2e5; font-size: 19px; font-weight: 500; letter-spacing: -.02em; }
+.process-list p { max-width: 305px; margin: 0; color: #929299; font-size: 13px; line-height: 1.7; }
+.agent-note { display: flex; align-items: center; gap: 11px; color: #b6b6bc; font-size: 12px; }
+.agent-note__mark { display: inline-flex; color: #8c8c92; }
+.agent-note p { margin: 0; line-height: 1.6; }
+.agent-note p > span { color: #77777f; }
+.landing-close { display: flex; align-items: center; justify-content: space-between; gap: 24px; padding: 65px 0 85px; border-top: 1px solid var(--line-subtle); }
+.landing-close h2 { margin: 0; font-size: clamp(30px, 3.5vw, 45px); font-weight: 550; line-height: 1.13; letter-spacing: -.045em; }
+.landing-close h2 > span { color: #83838a; }
+@media (max-width: 1100px) {
+  .hero { gap: 40px; padding-top: 62px; }
+  .hero h1 { font-size: 49px; }
+  .investigation__body { grid-template-columns: minmax(0, 1fr) 255px; }
+  .strategy-note { padding-inline: 23px; }
+  .strategy-note h2 { font-size: 25px; }
+  .hero__actions { gap: 17px; }
+  .tests-section { gap: 50px; }
+}
+@media (max-width: 820px) {
+  .hero { grid-template-columns: 1fr; gap: 25px; padding: 49px 0 34px; }
+  .hero h1 { font-size: clamp(43px, 7vw, 59px); }
+  .hero__action-area { max-width: 510px; }
+  .hero__action-area > p:first-child { margin-bottom: 21px; font-size: 15px; }
+  .investigation__body { grid-template-columns: minmax(0, 1fr); }
+  .strategy-note { display: grid; grid-template-columns: 1fr 1.1fr; gap: 0 30px; padding: 25px 28px; border-top: 1px solid var(--line-subtle); border-left: 0; }
+  .strategy-note__label { grid-column: 1; }
+  .strategy-note h2 { grid-column: 1; margin: 12px 0 0; }
+  .strategy-note__rules { grid-column: 2; grid-row: 1 / span 3; gap: 20px; }
+  .strategy-note__execution { grid-column: 1; margin-top: 20px; }
+  .strategy-note__question { display: none; }
+  .investigation__source { flex-wrap: wrap; gap: 2px; }
+  .tests-section { grid-template-columns: 1fr; gap: 37px; padding: 75px 0; }
+  .section-intro > p { max-width: 460px; margin-block: 17px; }
+  .section-intro h2 br { display: none; }
+  .section-intro .text-link { display: none; }
+  .process-section > header { display: block; }
+  .process-section__note { display: block; margin-top: 16px; }
+  .process-list { gap: 24px; }
+}
+@media (max-width: 560px) {
+  .hero { padding-top: 39px; }
+  .hero h1 { font-size: clamp(35px, 8.9vw, 48px); }
+  .hero__actions { gap: 23px; }
+  .hero__primary { min-height: 45px; padding-inline: 15px; gap: 15px; }
+  .hero__note { font-size: 10px; }
+  .investigation { border-radius: 11px; }
+  .investigation__header { gap: 10px; padding: 17px 18px; }
+  .investigation__instrument { gap: 9px; }
+  .investigation__instrument > span { font-size: 10px; }
+  .investigation__instrument i { margin: 0 4px; }
+  .investigation__instrument strong { font-size: 18px; }
+  .investigation__status { font-size: 9px; gap: 5px; }
+  .strategy-note { gap: 0 17px; padding: 24px 18px; }
+  .strategy-note h2 { font-size: 22px; }
+  .strategy-note__rules { gap: 19px; }
+  .strategy-note__rules > div { gap: 8px; }
+  .strategy-note__rules span { font-size: 10px; }
+  .strategy-note__rules strong { font-size: 11px; }
+  .strategy-note__execution { font-size: 9px; gap: 4px; }
+  .investigation__source { padding: 12px 18px; font-size: 9px; }
+  .tests-section { padding: 54px 0 59px; gap: 26px; }
+  .section-intro h2,.process-section h2 { font-size: 30px; }
+  .test-row summary { gap: 11px; }
+  .test-row__number { width: 20px; font-size: 10px; }
+  .test-row__copy strong { font-size: 14px; }
+  .test-row__copy > span { font-size: 11px; }
+  .test-row > p { margin-left: 31px; margin-right: 20px; font-size: 12px; }
+  .process-section { padding: 44px 0; }
+  .process-list { grid-template-columns: 1fr; gap: 25px; margin: 32px 0; }
+  .process-list li { display: grid; grid-template-columns: 20px 1fr; gap: 9px 13px; padding-top: 20px; }
+  .process-list__number { grid-row: 1 / span 2; padding-top: 3px; }
+  .process-list h3 { margin: 0; font-size: 17px; }
+  .process-list p { grid-column: 2; font-size: 12px; }
+  .agent-note { align-items: flex-start; font-size: 11px; }
+  .agent-note__mark { padding-top: 2px; }
+  .agent-note p > span { display: block; }
+  .landing-close { align-items: flex-start; flex-direction: column; gap: 24px; padding: 43px 0 55px; }
+  .landing-close h2 { font-size: 34px; }
+}
 </style>

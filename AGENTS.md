@@ -12,3 +12,8 @@
 - Use as few cards as possible. A card must represent a genuinely independent object or action, not merely decorate a section.
 - Prefer flat sections, spacing, typography, dividers, tables, and disclosures over nested containers.
 - Do not place a card inside another card unless the nested surface has an independent interaction model that cannot remain legible otherwise.
+
+## UI references
+
+- Before a UI redesign, inspect relevant designs on https://collectui.com/ in the browser. Use whole-page composition, hierarchy, spacing, and layout as references, not just isolated components.
+- Record the selected sources and the concrete decisions they informed. Adapt them to Strategy Court's workflow and typography rules; do not copy unrelated brand assets or decorative card grids.
