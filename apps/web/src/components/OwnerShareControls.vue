@@ -25,7 +25,9 @@ const copied = ref(false);
 const entityPath = computed(() => props.entityType === "report" ? "reports" : "indicators");
 const endpoint = computed(() => `/api/${entityPath.value}/${encodeURIComponent(props.entityId)}/share`);
 const statusCopy = computed(() => {
-  if (share.value.state === "active" && publicUrl.value) return "Anyone with this unlisted link can read the frozen record.";
+  if (share.value.state === "active" && publicUrl.value) return props.entityType === "report"
+    ? "Anyone with this link can read the run and its confirmed decisions. Later confirmed revisions update this report; private drafts stay private."
+    : "Anyone with this unlisted link can read the indicator record.";
   if (share.value.state === "active") return "An active link exists. Rotate it to reveal a new copyable URL.";
   if (share.value.state === "revoked") return "The previous link is revoked and no longer opens the record.";
   return "Create an unlisted, read-only link. It is shown once and can be revoked at any time.";

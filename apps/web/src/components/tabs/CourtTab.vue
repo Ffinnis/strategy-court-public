@@ -3,9 +3,11 @@ import { computed, ref } from "vue";
 import { ArrowRight, Check, ChevronDown, CircleAlert, CircleDashed, Database, LoaderCircle, LockKeyhole, Play, RefreshCw, Scale } from "lucide-vue-next";
 import { useCourtStore } from "@/stores/court";
 import CourtResultChart from "@/charts/CourtResultChart.vue";
+import InvestigationDecision from "@/components/InvestigationDecision.vue";
+import type { DataSnapshotPolicy } from "@strategy-court/schemas";
 
 const store = useCourtStore();
-const dataPolicy = ref<"frozen" | "refresh">("refresh");
+const dataPolicy = ref<DataSnapshotPolicy>(store.currentCase?.sampleId ? "saved_sample" : "refresh");
 const stages = [
   "Baseline simulation",
   "Untouched evaluation",
@@ -127,6 +129,9 @@ const metricSections = computed(() => [
       </div>
       <div class="run-ready__controls">
         <div class="data-policy" aria-label="Market data source">
+          <button v-if="store.currentCase?.sampleId" type="button" :aria-pressed="dataPolicy === 'saved_sample'" :class="{ active: dataPolicy === 'saved_sample' }" @click="dataPolicy = 'saved_sample'">
+            <Database :size="14" /> Saved Alpaca history
+          </button>
           <button type="button" :aria-pressed="dataPolicy === 'frozen'" :class="{ active: dataPolicy === 'frozen' }" @click="dataPolicy = 'frozen'">
             <Database :size="14" /> Synthetic demo
           </button>
@@ -153,6 +158,9 @@ const metricSections = computed(() => [
       </div>
       <div class="run-ready__controls">
         <div class="data-policy" aria-label="Market data source">
+          <button v-if="store.currentCase?.sampleId" type="button" :aria-pressed="dataPolicy === 'saved_sample'" :class="{ active: dataPolicy === 'saved_sample' }" @click="dataPolicy = 'saved_sample'">
+            <Database :size="14" /> Saved Alpaca history
+          </button>
           <button type="button" :aria-pressed="dataPolicy === 'frozen'" :class="{ active: dataPolicy === 'frozen' }" @click="dataPolicy = 'frozen'">
             <Database :size="14" /> Synthetic demo
           </button>
@@ -162,7 +170,7 @@ const metricSections = computed(() => [
         </div>
         <button class="button" type="button" :disabled="store.mutating" @click="store.runCourt(dataPolicy)"><Play :size="15" fill="currentColor" />{{ failedRun ? "Retry Court run" : "Run Court" }}</button>
       </div>
-      <small class="run-ready__meta">{{ dataPolicy === "frozen" ? "Generated prices, not market evidence" : "Fresh Alpaca request" }} · {{ store.currentCase?.startDate }} — {{ store.currentCase?.endDate }}</small>
+      <small class="run-ready__meta">{{ dataPolicy === "frozen" ? "Generated prices, not market evidence" : dataPolicy === "saved_sample" ? "Saved Alpaca history" : "Fresh Alpaca request" }} · {{ store.currentCase?.startDate }} — {{ store.currentCase?.endDate }}</small>
     </section>
   </div>
 
@@ -190,6 +198,11 @@ const metricSections = computed(() => [
       </div>
     </dl>
 
+    <p v-if="store.result?.data?.provider" class="run-ready__meta">
+      {{ store.result.data.provider }} · {{ store.result.data.feed }} · Adjustment: {{ store.result.data.adjustment }} · Retrieved {{ store.result.data.fetchedAt }}
+    </p>
+    <InvestigationDecision />
+
     <CourtResultChart
       :equity-points="store.result?.equityCurve ?? []"
       :drawdown-points="store.result?.drawdownCurve ?? []"
@@ -204,12 +217,12 @@ const metricSections = computed(() => [
 
     <section class="test-ledger" aria-labelledby="test-ledger-title">
       <header class="test-ledger__title">
-        <div><p class="status-label">Decision record</p><h2 id="test-ledger-title">Evidence by test</h2></div>
+        <div><p class="status-label">Test findings</p><h2 id="test-ledger-title">Evidence by test</h2></div>
         <span>{{ store.result?.verdicts.length ?? 0 }} completed</span>
       </header>
       <div class="test-ledger__columns" aria-hidden="true"><span>Result</span><span>Test and finding</span><span>Observed</span><span>Threshold</span></div>
       <div class="test-ledger__body">
-        <article v-for="verdict in store.result?.verdicts" :key="verdict.id" class="test-row">
+        <article v-for="verdict in store.result?.verdicts" :id="`verdict-${verdict.id}`" :key="verdict.id" class="test-row" tabindex="-1">
           <span class="subtle-badge test-row__status" :data-status="verdict.status">{{ verdict.status }}</span>
           <div class="test-row__finding"><h3>{{ verdict.category }}</h3><p>{{ verdict.finding }}</p></div>
           <span class="test-row__measure">{{ verdict.measure }}</span>

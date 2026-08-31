@@ -1,12 +1,14 @@
 # Strategy Court
 
-Strategy Court puts a daily-stock trading strategy through adversarial historical tests before the user considers risking capital. It turns a natural-language idea into inspectable rules, requires confirmation, runs deterministic tests, keeps every attempted variant, and moves unresolved ideas into replay probation.
+Strategy Court puts a daily-stock trading strategy through adversarial historical tests before the user considers risking capital. It turns an idea into inspectable rules, requires confirmation, runs deterministic tests, and records the user's conclusion with citations. Closing a weak investigation is a complete outcome. Further tests and replay require a reason to continue.
 
 This repository implements the WebMCP Challenge MVP described in [`prd.md`](./prd.md). Historical results are evidence about a model and a data set. They do not predict future returns.
 
 **Live app:** [strategy-court-production.up.railway.app](https://strategy-court-production.up.railway.app/)
 
 Start with the [reviewer test guide](./docs/reviewer-testing.md) for account setup, the WebMCP workflow, and an offline fallback.
+
+See [release readiness](./docs/release-readiness.md) for verified fixes and remaining deployment checks, and the [demo script](./docs/hackathon-demo.md) for the recording and user-test plan.
 
 ## Run locally
 
@@ -58,13 +60,13 @@ For testing without credentials, explicitly choose **Synthetic demo**, or pass `
 
 ## Demo path
 
-1. Sign in, open the landing page, and choose **Open sample**.
+1. Sign in and choose **Open sample** after the operator has [prepared the saved Alpaca history](./docs/prepared-sample.md). Alternatively, ask an agent to call `create_case` with your stated idea and reviewed settings.
 2. Review the structured RSI pullback rules and execution assumptions.
 3. Confirm the visible strategy interpretation. Draft creation saves a version; confirmation locks it for execution and remains a user action.
-4. Choose the data policy, run the Court, and inspect the seven separate verdicts, assumptions, trades, equity, and drawdown.
-5. Open a weak result, then create up to three controlled variants.
-6. Compare every attempt, including failed variants.
-7. If a version is Surviving or Inconclusive, start replay probation and advance the hidden period. Fragile versions remain ineligible by design.
+4. Run Court on **Saved Alpaca history** for a prepared sample. Inspect the verdicts, trades, equity and drawdown. Missing saved data produces an error, never substitute prices.
+5. Select a trade or failure yourself, or ask the agent to inspect it. Both use the same inspector and chart focus.
+6. Ask the agent to propose a cited decision. Review, edit and confirm it in Court. Confirmed decisions appear in the report; drafts stay private. Earlier confirmed decisions remain in history.
+7. Continue only for an explicit evidence question. Variants remain limited to three. Replay requires a Surviving or Inconclusive result and remains a separate action.
 8. Open Audit to verify user, agent, and system actions.
 
 When the browser implements the current WebMCP draft, the case page registers tools through `document.modelContext`. The support indicator shows whether registration is active. Every action remains available through visible controls when WebMCP is absent.
@@ -76,6 +78,7 @@ bun run dev          # API and web development servers
 bun run dev:api      # API only
 bun run dev:web      # web only
 bun run db:migrate
+bun run sample:prepare # operator-only; see docs/prepared-sample.md
 bun run typecheck
 bun test
 bun run build
@@ -149,12 +152,14 @@ See [`docs/implementation-plan.md`](./docs/implementation-plan.md) for the full 
 
 The frontend progressively registers the PRD tools as the case advances:
 
-- Signed in: `get_case_context`, `list_indicator_catalog`, `read_tool_result`, `create_strategy_draft`, `create_custom_indicator`
+- Signed in: `create_case`, `get_case_context`, `list_indicator_catalog`, `read_tool_result`, `create_strategy_draft`, `create_custom_indicator`
 - Confirmed version: `run_court`, `get_monitoring_status`, `refresh_monitoring`
-- Valid completed Court run: `inspect_failure_period`, `create_strategy_variants`, `compare_strategy_versions`, `start_replay_probation`, `export_case_report`
+- Valid completed Court run: `inspect_trade`, `inspect_failure_period`, `propose_case_decision`, `create_strategy_variants`, `compare_strategy_versions`, `start_replay_probation`, `export_case_report`
 - Replay active: `advance_replay`
 
 `get_monitoring_status` reads saved evidence. `refresh_monitoring` explicitly fetches and evaluates a completed bar; it does not place orders or advance a replay. Replay eligibility is checked again by the server.
+
+`create_case` requires a stable `requestId`; retries with the same owner, key and settings return the same case. `propose_case_decision` saves a private draft tied to an exact case, version and run. There is no confirmation tool. The person confirms through the visible form. Session authentication enforces ownership; the `x-actor` UI/agent distinction is a workflow convention, not proof of human identity. Existing report links reflect later confirmed decisions, including their history.
 
 `get_case_context` returns a compact summary by default. Request `detail: "strategy"` for the active version's exact rules without trade and price history, or `detail: "full"` for all case evidence. `list_indicator_catalog` returns ten summaries per page; pass `ids` (up to three) for exact parameter definitions before constructing a strategy. Large results return a `resultId`: call `read_tool_result` with the returned `nextOffset`, concatenate `jsonText` chunks, then parse the combined JSON. Handles expire after five minutes, on case/session changes, or when the bounded browser cache evicts an older result. Repeat the original read-only request if a handle expires. Normal responses are capped at 8,000 serialized characters, including their state envelope.
 

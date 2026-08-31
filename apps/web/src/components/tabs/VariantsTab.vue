@@ -22,8 +22,8 @@ interface ChangeConfig {
 
 const fixedChangeConfigs: Record<FixedChangeKey, ChangeConfig> = {
   maxHoldingDays: { label: "Maximum holding period", min: 1, max: 2520, step: 1, unit: "days", integer: true },
-  stopLossPercent: { label: "Stop loss", min: 0.01, max: 100, step: 0.1, unit: "%" },
-  takeProfitPercent: { label: "Take profit", min: 0.01, max: 100, step: 0.1, unit: "%" },
+  stopLossPercent: { label: "Stop loss", min: 0.01, max: 100, step: 0.01, unit: "%" },
+  takeProfitPercent: { label: "Take profit", min: 0.01, max: 100, step: 0.01, unit: "%" },
   commissionBpsPerSide: { label: "Commission per side", min: 0, max: 1000, step: 0.1, unit: "bps" },
   slippageBpsPerSide: { label: "Slippage per side", min: 0, max: 1000, step: 0.1, unit: "bps" },
 };

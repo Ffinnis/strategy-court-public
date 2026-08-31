@@ -1,3 +1,4 @@
+import { parseDecisionFields, tradeEvidenceId, type DecisionFields } from "@strategy-court/schemas";
 const object = (value: unknown): Record<string, unknown> => value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : {};
 const finite = (value: unknown) => typeof value === "number" && Number.isFinite(value) ? value : 0;
 const humanize = (value: unknown) => {
@@ -38,6 +39,8 @@ export interface SharedVersionView {
 }
 
 export interface SharedReportView {
+  decisions: Array<DecisionFields & {confirmedAt:string}>;
+  failures: Array<{id:string;title:string;summary:string}>;
   schemaVersion: number;
   name: string;
   description: string;
@@ -99,7 +102,7 @@ export function normalizeSharedReport(value: unknown): SharedReportView {
   const trades = (Array.isArray(raw.trades) ? raw.trades : []).map((value, index): SharedTradeView => {
     const trade = object(value);
     return {
-      id: text(trade.id, `trade-${index + 1}`),
+      id: tradeEvidenceId(index),
       symbol: text(trade.symbol, "N/A"),
       entryDate: text(trade.entryDate, ""),
       entryPrice: finite(trade.entryPrice),
@@ -124,6 +127,8 @@ export function normalizeSharedReport(value: unknown): SharedReportView {
   });
   const data = [
     { label: "Provider", value: displayValue(dataMetadata.provider) },
+    { label: "Feed", value: displayValue(dataMetadata.feed) },
+    { label: "Retrieved", value: displayValue(dataMetadata.fetchedAt) },
     { label: "Adjustment", value: displayValue(dataMetadata.adjustment) },
     { label: "Data range", value: dataDateRange.start && dataDateRange.end ? `${dataDateRange.start} to ${dataDateRange.end}` : "Not reported" },
     { label: "Snapshot hash", value: displayValue(dataMetadata.snapshotHash) },
@@ -131,6 +136,13 @@ export function normalizeSharedReport(value: unknown): SharedReportView {
   ];
   return {
     schemaVersion: finite(raw.schemaVersion),
+    decisions: (Array.isArray(raw.decisions) ? raw.decisions : []).flatMap(value=>{
+      const item=object(value);
+      if(item.state !== "confirmed") return [];
+      try { return [{...parseDecisionFields({outcome:item.outcome,rationale:item.rationale,evidenceRefs:item.evidenceRefs,uncertainties:item.uncertainties,revisitCriteria:item.revisitCriteria}),confirmedAt:text(item.confirmedAt,"")}]; }
+      catch {return [];}
+    }),
+    failures: (Array.isArray(raw.failures) ? raw.failures : []).map((value,index)=>{const item=object(value);return {id:text(item.id,`failure-${index+1}`),title:text(item.title,humanize(item.category ?? item.id) || "Failure evidence"),summary:text(item.summary ?? item.finding ?? item.explanation,"See the exported record for the full evidence.")};}),
     name: text(courtCase.name, "Court report"),
     description: text(courtCase.description, ""),
     symbols: Array.isArray(courtCase.symbols) ? courtCase.symbols.map(String) : [],

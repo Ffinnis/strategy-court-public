@@ -96,6 +96,7 @@ export interface MarketEvidenceBar {
 export type MarketEvidence = Record<string, MarketEvidenceBar[]>;
 
 export interface FailureEvidence {
+  dateRange?: { start: string; end: string };
   id: string;
   title: string;
   period: string;
@@ -118,6 +119,7 @@ export interface FailureEvidence {
 }
 
 export interface CourtResult {
+  data?: Record<string, unknown>;
   summaryLabel: string;
   verdicts: Verdict[];
   metrics: Metric[];
@@ -258,6 +260,8 @@ export interface VersionComparison {
 }
 
 export interface CourtCase {
+  sampleId?: string | null;
+  decisions?: import("@strategy-court/schemas").InvestigationDecision[];
   id: string;
   name: string;
   description: string;

@@ -68,6 +68,12 @@ export async function buildReportManifest(
   const versionNumbers = new Map(courtCase.versions.map((version) => [version.id, version.version]));
   const strategy = publicVersion(strategyVersion, versionNumbers);
   const result = run.result ?? {};
+  const decisions = (await store.decisions.list(courtCase.id,ownerUserId,run.id))
+    .filter(item=>item.state === "confirmed")
+    .sort((a,b)=>(b.confirmedAt ?? "").localeCompare(a.confirmedAt ?? ""))
+    .map(({id,caseId,versionId,runId:decisionRunId,...item})=>({
+      ...item,...(exposeOwnerIds ? {id,caseId,versionId,runId:decisionRunId} : {supersedesId:undefined}),
+    }));
   const dataMetadata = snapshot ? {
     provider: snapshot.provider,
     adjustment: snapshot.adjustment,
@@ -82,6 +88,7 @@ export async function buildReportManifest(
   return {
     schemaVersion: SHARE_MANIFEST_VERSION,
     kind: "strategy_court_report",
+    decisions,
     ...(exposeOwnerIds ? { id: run.id } : {}),
     case: {
       ...(exposeOwnerIds ? { id: courtCase.id } : {}),

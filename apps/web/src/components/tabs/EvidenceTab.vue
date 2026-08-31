@@ -9,14 +9,14 @@ import { trappedFocusTarget } from "@/services/focusTrap";
 const CandlestickEvidenceChart = defineAsyncComponent(() => import("@/charts/CandlestickEvidenceChart.vue"));
 
 const store = useCourtStore();
-const selectedFailure = ref<FailureEvidence | null>(null);
-const selectedTrade = ref<Trade | null>(null);
+const selectedFailure = computed(() => store.selectedFailure);
+const selectedTrade = computed(() => store.selectedTrade);
 const dialog = ref<HTMLElement | null>(null);
 const failureRetryButton = ref<HTMLButtonElement | null>(null);
-const failureDetailLoading = ref(false);
-const failureInspectionFailed = ref(false);
+const failureDetailLoading = computed(() => store.evidenceSelection?.status === "loading");
+const failureInspectionFailed = computed(() => store.evidenceSelection?.status === "error");
 let previousFocus: HTMLElement | null = null;
-let failureInspectionRequest = 0;
+
 const tradeFilter = ref("All");
 const signalStatusFilter = ref("All");
 const signalSymbolFilter = ref("All");
@@ -61,33 +61,29 @@ const fillPlot = computed(() => {
 async function loadFailureDetails() {
   await store.enrichFailures();
 }
-async function inspectSelectedFailure(restoreFocus = false) {
-  const failure = selectedFailure.value;
-  if (!failure) return;
-  const request = ++failureInspectionRequest;
-  failureDetailLoading.value = true;
-  const inspected = await store.inspectFailure(store.latestRun?.id ?? "", failure.id);
-  if (request !== failureInspectionRequest || selectedFailure.value?.id !== failure.id) return;
-  if (inspected) selectedFailure.value = inspected;
-  failureInspectionFailed.value = !inspected;
-  failureDetailLoading.value = false;
-  if (!restoreFocus) return;
-  await nextTick();
-  if (failureInspectionFailed.value) failureRetryButton.value?.focus();
-  else dialog.value?.focus();
+async function chooseEvidence(kind: "failure" | "trade", id: string, event?: Event) {
+  if (event?.currentTarget instanceof HTMLElement) previousFocus = event.currentTarget;
+  try { await store.selectEvidence(store.latestRun?.id ?? "", { kind, id }); }
+  catch { /* The selected inspector displays the error and retry control. */ }
 }
-async function openFailure(failure: FailureEvidence, event: Event) {
-  previousFocus = event.currentTarget as HTMLElement;
-  failureInspectionRequest += 1;
-  failureInspectionFailed.value = false;
-  selectedFailure.value = failure;
+async function openFailure(failure: FailureEvidence, event: Event) { await chooseEvidence("failure", failure.id, event); }
+async function openTrade(trade: Trade, event?: Event) { if (trade.id) await chooseEvidence("trade", trade.id, event); }
+async function openChartTrade(id: string) {
+  const trade = store.result?.trades.find(item => item.id === id);
+  if (trade) await openTrade(trade);
+}
+async function retrySelectedFailure() {
+  if (selectedFailure.value) await chooseEvidence("failure", selectedFailure.value.id);
+}
+function closeDialog() {
+  store.clearEvidenceSelection();
+  nextTick(() => (previousFocus?.isConnected ? previousFocus : document.querySelector<HTMLElement>('[aria-controls="panel-evidence"]'))?.focus());
+}
+watch(() => store.evidenceSelection?.revision, async (revision) => {
+  if (revision === undefined) return;
   await nextTick();
   dialog.value?.focus();
-  await inspectSelectedFailure();
-}
-async function retrySelectedFailure() { await inspectSelectedFailure(true); }
-async function openTrade(trade: Trade, event: Event) { previousFocus = event.currentTarget as HTMLElement; selectedTrade.value = trade; await nextTick(); dialog.value?.focus(); }
-function closeDialog() { failureInspectionRequest += 1; failureDetailLoading.value = false; failureInspectionFailed.value = false; selectedFailure.value = null; selectedTrade.value = null; nextTick(() => previousFocus?.focus()); }
+}, { immediate: true });
 function handleDialogKey(event: KeyboardEvent) {
   if (!selectedFailure.value && !selectedTrade.value) return;
   if (event.key === "Escape") { event.preventDefault(); closeDialog(); return; }
@@ -115,6 +111,8 @@ watch([signalStatusFilter, signalSymbolFilter], () => { signalPage.value = 1; })
 
     <div v-else class="evidence-stack">
       <CandlestickEvidenceChart
+        :focus="store.evidenceFocus"
+        @select-trade="openChartTrade"
         :evidence="store.result?.marketEvidence ?? {}"
         :trades="store.result?.trades ?? []"
         :error="store.latestRun?.error ?? ''"
@@ -246,7 +244,7 @@ watch([signalStatusFilter, signalSymbolFilter], () => { signalPage.value = 1; })
   <Teleport to="body">
     <div v-if="selectedFailure" class="drawer-backdrop" @click.self="closeDialog">
       <aside ref="dialog" class="evidence-drawer" tabindex="-1" role="dialog" aria-modal="true" aria-labelledby="failure-title">
-        <div class="drawer-header"><div><p class="eyebrow">Stress period</p><h2 id="failure-title">{{ selectedFailure.title }}</h2></div><button class="drawer-close" type="button" aria-label="Close evidence inspector" @click="closeDialog"><X :size="18" /></button></div>
+        <div class="drawer-header"><div><p v-if="store.evidenceSelection?.actor === 'agent'" role="status">Selected by agent</p><p class="eyebrow">Stress period</p><h2 id="failure-title">{{ selectedFailure.title }}</h2></div><button class="drawer-close" type="button" aria-label="Close evidence inspector" @click="closeDialog"><X :size="18" /></button></div>
         <div class="drawer-body">
           <div class="drawer-period"><span>{{ selectedFailure.period }}</span><strong class="negative">{{ selectedFailure.equityChange }}</strong></div><p class="drawer-summary">{{ selectedFailure.summary }}</p>
           <div
@@ -256,7 +254,7 @@ watch([signalStatusFilter, signalSymbolFilter], () => { signalPage.value = 1; })
             :role="failureInspectionFailed && !failureDetailLoading ? 'alert' : 'status'"
           >
             <CircleAlert v-if="failureInspectionFailed" :size="14" aria-hidden="true" />
-            <span>{{ failureDetailLoading ? (failureInspectionFailed ? "Trying again…" : "Loading complete period details…") : store.failureEvidenceError ?? "Complete period details could not be loaded." }}</span>
+            <span>{{ failureDetailLoading ? (failureInspectionFailed ? "Trying again…" : "Loading complete period details…") : store.evidenceSelection?.error ?? "Complete period details could not be loaded." }}</span>
             <button
               v-if="failureInspectionFailed"
               ref="failureRetryButton"
@@ -270,13 +268,13 @@ watch([signalStatusFilter, signalSymbolFilter], () => { signalPage.value = 1; })
           <template v-if="indicatorInputs.length || indicatorSeries.length"><div class="evidence-label">Returned indicator evidence</div><dl class="input-list"><div v-for="(input,index) in indicatorInputs" :key="`input-${index}`"><dt>Declared indicator</dt><dd>{{ describeIndicator(input) }}</dd></div><div v-for="(series,index) in indicatorSeries" :key="`series-${index}`"><dt>Observed series</dt><dd>{{ describeSeries(series) }}</dd></div></dl></template>
           <div class="evidence-label">Market context</div><div class="context-grid"><div><span>Regime</span><strong>{{ selectedFailure.regime }}</strong></div><div><span>Symbols involved</span><strong>{{ selectedFailure.symbols.join(" · ") || "None in returned period" }}</strong></div><div><span>Execution</span><strong>{{ assumption("execution") }}</strong></div><div><span>Period bars returned</span><strong>{{ selectedFailure.marketBars?.length ?? 0 }}</strong></div></div><div class="drawer-callout"><CircleAlert :size="15" /><span>Historical evidence, not a forecast.</span></div>
         </div>
-        <div class="drawer-footer"><button class="button button--secondary" @click="closeDialog">Close</button><button class="button" @click="closeDialog(); store.activeTab = 'variants'">Investigate with variants <ExternalLink :size="14" /></button></div>
+        <div class="drawer-footer"><button class="button button--secondary" @click="closeDialog">Close</button><button class="button" @click="closeDialog(); store.activeTab = 'court'">Review investigation decision <ExternalLink :size="14" /></button></div>
       </aside>
     </div>
 
     <div v-if="selectedTrade" class="drawer-backdrop" @click.self="closeDialog">
       <aside ref="dialog" class="evidence-drawer evidence-drawer--trade" tabindex="-1" role="dialog" aria-modal="true" aria-labelledby="trade-title">
-        <div class="drawer-header"><div><p class="eyebrow">Recorded trade</p><h2 id="trade-title" class="trade-ticker">{{ selectedTrade.symbol }}</h2></div><button class="drawer-close" type="button" aria-label="Close trade inspector" @click="closeDialog"><X :size="18" /></button></div>
+        <div class="drawer-header"><div><p v-if="store.evidenceSelection?.actor === 'agent'" role="status">Selected by agent</p><p class="eyebrow">Recorded trade</p><h2 id="trade-title" class="trade-ticker">{{ selectedTrade.symbol }}</h2></div><button class="drawer-close" type="button" aria-label="Close trade inspector" @click="closeDialog"><X :size="18" /></button></div>
         <div class="drawer-body">
           <div class="trade-result">
             <span>Net profit</span>

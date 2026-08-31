@@ -1,6 +1,9 @@
 import type { Pool, PoolClient } from "pg";
 import migration from "./migrations/001_postgres.sql" with { type: "text" };
 import { createOpaqueToken, hashShareToken } from "./services/sharing";
+import { DecisionRepository, requestKey } from "./services/decisions";
+import { contentHash } from "./providers/market";
+import { ApiError } from "./errors";
 import type {
   Actor,
   AuditRecord,
@@ -50,6 +53,7 @@ export function calendarDate(value: unknown): string {
 
 function caseFromRow(row: Row): CaseRecord {
   return {
+    sampleId: row.sample_id ? String(row.sample_id) : null,
     id: String(row.id),
     name: String(row.name),
     description: String(row.description),
@@ -183,9 +187,11 @@ function shareFromRow(row: Row): ShareTokenRecord {
 
 export class Store {
   readonly db: Pool;
+  readonly decisions: DecisionRepository;
 
   constructor(pool: Pool) {
     this.db = pool;
+    this.decisions = new DecisionRepository(pool);
   }
 
   async migrate(): Promise<void> {
@@ -275,7 +281,10 @@ export class Store {
     input: Omit<CaseRecord, "id" | "status" | "activeVersionId" | "evaluationLocked" | "createdAt" | "updatedAt">,
     actor: Actor,
     ownerUserId: string,
+    creationRequestId?: string,
   ): Promise<CaseRecord> {
+    const key = creationRequestId === undefined ? null : requestKey(creationRequestId);
+    const hash = contentHash(input);
     const createdAt = now();
     const record: CaseRecord = {
       ...input,
@@ -286,12 +295,20 @@ export class Store {
       createdAt,
       updatedAt: createdAt,
     };
-    await this.transaction(async (client) => {
+    return this.transaction(async (client) => {
+      if (key) {
+        await client.query("SELECT pg_advisory_xact_lock(hashtextextended($1,0))", [`${ownerUserId}:${key}`]);
+        const prior = await client.query("SELECT * FROM court_cases WHERE owner_user_id=$1 AND creation_request_id=$2", [ownerUserId,key]);
+        if (prior.rows[0]) {
+          if (prior.rows[0].creation_input_hash !== hash) throw new ApiError(409,"request_conflict","This requestId was already used with different case settings.");
+          return caseFromRow(prior.rows[0]);
+        }
+      }
       await client.query(`INSERT INTO court_cases
         (id, owner_user_id, name, description, symbols_json, date_from, date_to, initial_capital,
          commission_bps, slippage_bps, status, selected_profile, active_version_id,
-         evaluation_locked, created_at, updated_at)
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, NULL, FALSE, $13, $13)`, [
+         evaluation_locked, created_at, updated_at, creation_request_id, creation_input_hash, sample_id)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, NULL, FALSE, $13, $13, $14, $15, $16)`, [
         record.id,
         ownerUserId,
         record.name,
@@ -305,6 +322,7 @@ export class Store {
         record.status,
         record.selectedProfile,
         createdAt,
+        key, hash, input.sampleId ?? null,
       ]);
       await this.insertAudit(client, {
         caseId: record.id,
@@ -315,8 +333,8 @@ export class Store {
         entityId: record.id,
         after: record,
       });
+      return record;
     });
-    return record;
   }
 
   async listCases(ownerUserId: string): Promise<CaseRecord[]> {
@@ -346,11 +364,25 @@ export class Store {
     ]);
     return {
       ...courtCase,
+      decisions: await this.decisions.list(caseId, ownerUserId),
       versions: (versions.rows as Row[]).map(versionFromRow),
       runs: (runs.rows as Row[]).map(runFromRow),
       replays: (replays.rows as Row[]).map(replayFromRow),
       audit: (audit.rows as Row[]).map(auditFromRow),
     };
+  }
+
+  async ensureSampleDraft(caseId: string, definition: unknown, interpretation: string, actor: Actor, ownerId: string): Promise<void> {
+    await this.transaction(async client => {
+      await this.requireOwnedCase(client, caseId, ownerId);
+      const existing = await client.query("SELECT id FROM strategy_versions WHERE case_id=$1 LIMIT 1", [caseId]);
+      if (existing.rowCount) return;
+      const versionId = id();
+      await client.query(`INSERT INTO strategy_versions (id,case_id,version_number,definition_json,interpretation,source,created_at)
+        VALUES ($1,$2,1,$3,$4,$5,NOW())`, [versionId,caseId,encoded(definition),interpretation,actor]);
+      await client.query("UPDATE court_cases SET active_version_id=$1,updated_at=NOW() WHERE id=$2", [versionId,caseId]);
+      await this.insertAudit(client,{caseId,actor,actorUserId:ownerId,action:"strategy.draft_created",entityType:"strategy_version",entityId:versionId});
+    });
   }
 
   async createVersion(input: {
@@ -777,10 +809,10 @@ export class Store {
     return result.rows[0] ? snapshotFromRow(result.rows[0] as Row) : null;
   }
 
-  async findSnapshot(symbols: string[], dateFrom: string, dateTo: string): Promise<SnapshotRecord | null> {
+  async findSnapshot(symbols: string[], dateFrom: string, dateTo: string, provenance: Pick<SnapshotRecord, "provider" | "feed" | "adjustment">): Promise<SnapshotRecord | null> {
     const result = await this.db.query(
-      "SELECT * FROM market_snapshots WHERE date_from <= $1 AND date_to >= $2 ORDER BY fetched_at DESC",
-      [dateFrom, dateTo],
+      "SELECT * FROM market_snapshots WHERE date_from <= $1 AND date_to >= $2 AND provider = $3 AND feed = $4 AND adjustment = $5 ORDER BY fetched_at DESC",
+      [dateFrom, dateTo, provenance.provider, provenance.feed, provenance.adjustment],
     );
     const requested = [...symbols].sort().join(",");
     const row = (result.rows as Row[]).find(

@@ -15,16 +15,16 @@ const sampleBusy = ref(false);
 const sampleError = ref("");
 let sampleRequestHandled = false;
 
-async function openSample() {
+async function openSample(kind: "real" | "synthetic" = "real") {
   if (sampleBusy.value || sessionState.value.isPending) return;
   sampleError.value = "";
   if (!sessionState.value.data?.user) {
-    await router.push({ name: "auth", query: { redirect: "/?sample=1" } });
+    await router.push({ name: "auth", query: { redirect: kind === "synthetic" ? "/?sample=synthetic" : "/?sample=1" } });
     return;
   }
   sampleBusy.value = true;
   try {
-    const id = await store.createSample();
+    const id = kind === "synthetic" ? await store.createSyntheticSample() : await store.createSample();
     if (id) await router.push(`/case/${id}`);
     else sampleError.value = store.error || "Could not open the sample. Please try again.";
   } catch {
@@ -37,10 +37,10 @@ async function openSample() {
 watch(
   () => [route.query.sample, sessionState.value.isPending, sessionState.value.data?.user?.id] as const,
   ([requested, pending, userId]) => {
-    if (requested !== "1") sampleRequestHandled = false;
-    if (requested === "1" && !pending && userId && !sampleRequestHandled) {
+    if (requested !== "1" && requested !== "synthetic") sampleRequestHandled = false;
+    if ((requested === "1" || requested === "synthetic") && !pending && userId && !sampleRequestHandled) {
       sampleRequestHandled = true;
-      void openSample();
+      void openSample(requested === "synthetic" ? "synthetic" : "real");
     }
   },
   { immediate: true },
@@ -67,14 +67,14 @@ const steps = [
     <section class="hero" aria-labelledby="landing-heading">
       <h1 id="landing-heading">Find the weak spot.<br><span>Before you trade.</span></h1>
       <div class="hero__action-area">
-        <p>Put your trading rules through seven robustness tests. See where they hold, and where they don't.</p>
+        <p>Bring a trading idea from your AI assistant. Investigate its weaknesses together, with inspectable rules and historical evidence.</p>
         <div class="hero__actions">
           <RouterLink class="button hero__primary" to="/new">Create strategy <ArrowUpRight :size="17" /></RouterLink>
-          <button class="hero__sample" type="button" :disabled="sampleBusy || sessionState.isPending" @click="openSample">
+          <button class="hero__sample" type="button" :disabled="sampleBusy || sessionState.isPending" @click="openSample()">
             {{ sampleBusy ? "Opening sample…" : "Open sample" }} <ArrowRight :size="15" />
           </button>
         </div>
-        <p v-if="sampleError" class="sample-error" role="alert">{{ sampleError }}</p>
+        <div v-if="sampleError"><p class="sample-error" role="alert">{{ sampleError }}</p><button class="hero__sample" type="button" :disabled="sampleBusy" @click="openSample('synthetic')">Use synthetic software demo</button></div>
         <span v-else class="hero__note">Historical tests. No orders placed.</span>
       </div>
     </section>

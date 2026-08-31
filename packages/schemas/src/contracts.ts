@@ -3,7 +3,7 @@ import type { ConditionNode, StrategyDefinition, StrategyPatch, StrategyVariantR
 
 export interface DateRange { start: string; end: string }
 export type CourtProfile = "balanced";
-export type DataSnapshotPolicy = "frozen" | "prefer_cache" | "refresh";
+export type DataSnapshotPolicy = "frozen" | "prefer_cache" | "refresh" | "saved_sample";
 
 export interface CourtRunRequest {
   strategyVersionId: string;

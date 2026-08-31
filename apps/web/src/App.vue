@@ -15,7 +15,7 @@ const isAuthPage = computed(() => route.name === "auth");
 const signingOut = ref(false);
 const signOutError = ref("");
 
-useWebMcp(webMcpEnabled);
+useWebMcp(webMcpEnabled, id => router.push(`/case/${encodeURIComponent(id)}`));
 
 watch(() => [sessionState.value.isPending, Boolean(currentUser.value)] as const, ([pending, signedIn]) => {
   if (!pending && !signedIn && route.meta.requiresAuth) {

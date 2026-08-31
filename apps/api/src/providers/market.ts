@@ -10,6 +10,7 @@ export interface MarketRequest {
 }
 
 export interface MarketProvider {
+  readonly provenance?: { provider: string; feed: string; adjustment: string };
   getSnapshot(input: MarketRequest): Promise<SnapshotRecord>;
 }
 
@@ -183,6 +184,7 @@ export function analyzeSessionCoverage(input: MarketRequest, bars: Bar[]): Sessi
 }
 
 export class FixtureMarketProvider implements MarketProvider {
+  readonly provenance = { provider: "synthetic_demo", feed: "frozen", adjustment: frozenMarketSnapshot.adjustment };
   async getSnapshot(input: MarketRequest): Promise<SnapshotRecord> {
     const supplied = frozenMarketSnapshot as DataSnapshot;
     const availableCoverage = fixtureCoverage(supplied);
@@ -280,6 +282,7 @@ async function withMarketTimeout<T>(operation: (signal: AbortSignal) => Promise<
 }
 
 export class AlpacaMarketProvider implements MarketProvider {
+  get provenance() { return { provider: "alpaca", feed: this.feed, adjustment: "all" }; }
   constructor(
     private readonly apiKey: string,
     private readonly apiSecret: string,
@@ -368,14 +371,14 @@ export class AlpacaMarketProvider implements MarketProvider {
   }
 }
 
-export function selectMarketProvider(policy: string): MarketProvider {
+export function selectMarketProvider(policy: string, feed?: string): MarketProvider {
   const key = process.env.ALPACA_API_KEY;
   const secret = process.env.ALPACA_API_SECRET;
   if (policy === "refresh") {
     if (!key || !secret) {
       throw new ApiError(422, "market_credentials_missing", "Refresh requires ALPACA_API_KEY and ALPACA_API_SECRET");
     }
-    return new AlpacaMarketProvider(key, secret);
+    return new AlpacaMarketProvider(key, secret, undefined, feed);
   }
   return new FixtureMarketProvider();
 }

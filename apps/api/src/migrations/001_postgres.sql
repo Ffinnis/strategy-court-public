@@ -147,3 +147,33 @@ CREATE UNIQUE INDEX IF NOT EXISTS share_tokens_one_active_idx
   WHERE revoked_at IS NULL;
 CREATE INDEX IF NOT EXISTS monitoring_evaluations_case_idx
   ON monitoring_evaluations(case_id, strategy_version_id, created_at DESC);
+
+ALTER TABLE court_cases ADD COLUMN IF NOT EXISTS creation_request_id TEXT;
+ALTER TABLE court_cases ADD COLUMN IF NOT EXISTS creation_input_hash TEXT;
+ALTER TABLE court_cases ADD COLUMN IF NOT EXISTS sample_id TEXT;
+CREATE UNIQUE INDEX IF NOT EXISTS court_cases_creation_request_idx ON court_cases(owner_user_id,creation_request_id) WHERE creation_request_id IS NOT NULL;
+
+CREATE TABLE IF NOT EXISTS investigation_decisions (
+  id TEXT PRIMARY KEY,
+  case_id TEXT NOT NULL REFERENCES court_cases(id) ON DELETE CASCADE,
+  strategy_version_id TEXT NOT NULL REFERENCES strategy_versions(id),
+  run_id TEXT NOT NULL REFERENCES court_runs(id),
+  state TEXT NOT NULL CHECK (state IN ('draft','confirmed')),
+  fields_json JSONB NOT NULL,
+  source TEXT NOT NULL CHECK (source IN ('user','agent')),
+  creator_user_id TEXT NOT NULL REFERENCES "user"(id),
+  request_id TEXT NOT NULL,
+  input_hash TEXT NOT NULL,
+  created_at TIMESTAMPTZ NOT NULL,
+  confirmed_at TIMESTAMPTZ,
+  confirmed_by TEXT REFERENCES "user"(id),
+  supersedes_id TEXT REFERENCES investigation_decisions(id),
+  UNIQUE (case_id,request_id)
+);
+CREATE INDEX IF NOT EXISTS investigation_decisions_run_idx ON investigation_decisions(case_id,run_id,created_at DESC);
+
+CREATE TABLE IF NOT EXISTS prepared_samples (
+  id TEXT PRIMARY KEY,
+  manifest_json JSONB NOT NULL,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);

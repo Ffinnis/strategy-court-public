@@ -21,7 +21,9 @@ const props = withDefaults(defineProps<{
   trades?: Trade[];
   loading?: boolean;
   error?: string;
+  focus?: { symbol?: string; start: string; end: string; tradeId?: string; revision: number } | null;
 }>(), { trades: () => [], loading: false, error: "" });
+const emit = defineEmits<{ "select-trade": [id: string] }>();
 
 const chartId = useId();
 const chartContainer = ref<HTMLElement | null>(null);
@@ -81,13 +83,27 @@ function applyViewMode(): void {
 
 function showRecent(): void {
   if (!chart) return;
+  activeBar.value = seriesData.value.bars.at(-1) ?? null;
   const count = seriesData.value.candles.length;
   if (count <= 252) chart.timeScale().fitContent();
   else chart.timeScale().setVisibleLogicalRange({ from: count - 252, to: count + 8 });
 }
 
 function showAll(): void {
+  activeBar.value = seriesData.value.bars.at(-1) ?? null;
   chart?.timeScale().fitContent();
+}
+
+function focusEvidence(): boolean {
+  const focus = props.focus;
+  if (!focus || !chart || (focus.symbol && focus.symbol !== selectedSymbol.value)) return false;
+  const dates = seriesData.value.bars.map(bar => bar.date);
+  const from = dates.findIndex(date => date >= focus.start);
+  const last = dates.reduce((found,date,index) => date <= focus.end ? index : found,-1);
+  if (from < 0 || last < from) return false;
+  activeBar.value = seriesData.value.bars[last] ?? null;
+  chart.timeScale().setVisibleLogicalRange({ from: Math.max(-1,from - 5), to: Math.min(dates.length,last + 5) });
+  return true;
 }
 
 function syncChart(refit = true): void {
@@ -96,22 +112,23 @@ function syncChart(refit = true): void {
   candleSeries.setData(data.candles);
   closeSeries.setData(data.closes);
   volumeSeries.setData(data.volume);
-  updateMarkers(data.markers);
-  activeBar.value = data.bars.at(-1) ?? null;
+  updateMarkers(data.markers.map(marker => props.focus?.tradeId && String(marker.id).startsWith(`${props.focus.tradeId}-`)
+    ? { ...marker, color: "#d5b77b", size: 1.7 } : marker));
+  if (refit) activeBar.value = data.bars.at(-1) ?? null;
   applyViewMode();
   requestAnimationFrame(() => {
     requestAnimationFrame(() => {
       const panes = chart?.panes() ?? [];
       panes[0]?.setStretchFactor(4);
       panes[1]?.setStretchFactor(1);
-      if (refit) showRecent();
+      if (!focusEvidence() && refit) showRecent();
     });
   });
 }
 
 function onCrosshairMove(param: MouseEventParams<Time>): void {
   const bar = barByDate.value.get(timeKey(param.time));
-  activeBar.value = bar ?? seriesData.value.bars.at(-1) ?? null;
+  if (bar) activeBar.value = bar;
 }
 
 function destroyChart(): void {
@@ -207,6 +224,11 @@ async function initializeChart(): Promise<void> {
     lineMarkers.setMarkers(markers);
   };
   chart.subscribeCrosshairMove(onCrosshairMove);
+  chart.subscribeClick(param => {
+    const marker = String(param.hoveredObjectId ?? "");
+    const trade = props.trades.find(item => marker === `${item.id}-entry` || marker === `${item.id}-exit`);
+    if (trade?.id) emit("select-trade", trade.id);
+  });
   chart.subscribeDblClick(showRecent);
   syncChart();
 }
@@ -220,6 +242,11 @@ watch(seriesData, () => {
   else if (isReady.value) void initializeChart();
 });
 watch(viewMode, applyViewMode);
+watch(() => props.focus, async focus => {
+  if (focus?.symbol && symbols.value.includes(focus.symbol)) selectedSymbol.value = focus.symbol;
+  await nextTick();
+  syncChart(false);
+}, { immediate: true });
 onMounted(() => void initializeChart());
 onBeforeUnmount(destroyChart);
 </script>

@@ -301,7 +301,7 @@ export function safeParseCourtRunRequest(value: unknown): SafeParseResult<CourtR
     if (start !== null && end !== null && start > end) issues.push({ path: "$.dateRange", message: "Start must not follow end" });
   }
   if (value.courtProfile !== "balanced") issues.push({ path: "$.courtProfile", message: "Only the balanced profile is available" });
-  if (!["frozen", "prefer_cache", "refresh"].includes(String(value.dataSnapshotPolicy))) issues.push({ path: "$.dataSnapshotPolicy", message: "Unsupported snapshot policy" });
+  if (!["frozen", "prefer_cache", "refresh", "saved_sample"].includes(String(value.dataSnapshotPolicy))) issues.push({ path: "$.dataSnapshotPolicy", message: "Unsupported snapshot policy" });
   boundedNumber(value.initialCapital, "$.initialCapital", issues, 100, 100_000_000);
   return issues.length ? { success: false, issues } : { success: true, data: value as unknown as CourtRunRequest };
 }
@@ -472,7 +472,7 @@ export const courtRunRequestJsonSchema = {
       properties: { start: { type: "string", pattern: "^\\d{4}-\\d{2}-\\d{2}$" }, end: { type: "string", pattern: "^\\d{4}-\\d{2}-\\d{2}$" } },
     },
     courtProfile: { enum: ["balanced"] },
-    dataSnapshotPolicy: { enum: ["frozen", "prefer_cache", "refresh"] },
+    dataSnapshotPolicy: { enum: ["frozen", "prefer_cache", "refresh", "saved_sample"] },
     initialCapital: { type: "number", minimum: 100, maximum: 100000000 },
   },
 } as const;

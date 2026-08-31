@@ -243,7 +243,7 @@ describe("connected-state integrity", () => {
     const enabled = ref(true);
     useWebMcp(enabled);
     await new Promise((resolve) => setTimeout(resolve, 0));
-    expect([...registered.keys()].sort()).toEqual(["create_custom_indicator", "create_strategy_draft", "get_case_context", "list_indicator_catalog", "read_tool_result"]);
+    expect([...registered.keys()].sort()).toEqual(["create_case", "create_custom_indicator", "create_strategy_draft", "get_case_context", "list_indicator_catalog", "read_tool_result"]);
     expect(registered.has("get_monitoring_status")).toBe(false);
 
     store.currentCase.versions[0]!.confirmed = true;

@@ -5,6 +5,7 @@ import { ArrowLeft, Download, FileText, RefreshCw } from "lucide-vue-next";
 import { apiDownload, apiRequest, saveDownload, unwrap } from "@/services/api";
 import { normalizeSharedReport, type SharedReportView } from "@/data/shared";
 import StatusBadge from "@/components/StatusBadge.vue";
+import type { EvidenceReference } from "@strategy-court/schemas";
 
 const route = useRoute();
 const report = ref<SharedReportView | null>(null);
@@ -17,6 +18,14 @@ const definition = computed(() => report.value?.strategyDefinition ?? {});
 const execution = computed(() => definition.value.execution && typeof definition.value.execution === "object" ? definition.value.execution as Record<string, unknown> : {});
 const costs = computed(() => definition.value.costs && typeof definition.value.costs === "object" ? definition.value.costs as Record<string, unknown> : {});
 const risk = computed(() => definition.value.risk && typeof definition.value.risk === "object" ? definition.value.risk as Record<string, unknown> : {});
+const decisionLabels = {rejected:"Investigation closed",needs_more_evidence:"More evidence needed",ready_for_replay:"Ready for further replay"};
+function citationLabel(reference: EvidenceReference) {
+  const evidence = reference.kind === "verdict" ? report.value?.verdicts.find(item => item.id === reference.id)?.category
+    : reference.kind === "failure" ? report.value?.failures.find(item => item.id === reference.id)?.title
+    : report.value?.trades.find(item => item.id === reference.id);
+  const label = typeof evidence === "string" ? evidence : evidence ? `${evidence.symbol}: ${evidence.entryDate} to ${evidence.exitDate}` : reference.id;
+  return `${label} · ${reference.kind}`;
+}
 
 const operatorLabel: Record<string, string> = {
   gt: "is greater than",
@@ -127,6 +136,20 @@ onMounted(loadReport);
           </div>
         </header>
 
+        <section v-if="report.decisions.length" class="report-section">
+          <header><h2>Investigation decision</h2><span>Confirmed {{ formatDate(report.decisions[0]!.confirmedAt) }}</span></header>
+          <h3>{{ decisionLabels[report.decisions[0]!.outcome] }}</h3>
+          <p>{{ report.decisions[0]!.rationale }}</p>
+          <ul><li v-for="reference in report.decisions[0]!.evidenceRefs" :key="`${reference.kind}:${reference.id}`"><a :href="`#${reference.kind}-${reference.id}`">{{ citationLabel(reference) }}</a></li></ul>
+          <dl><dt>Remaining uncertainty</dt><dd>{{ report.decisions[0]!.uncertainties }}</dd><dt>Revisit when</dt><dd>{{ report.decisions[0]!.revisitCriteria }}</dd></dl>
+          <details v-if="report.decisions.length>1"><summary>Earlier confirmed decisions</summary><div v-for="(decision,index) in report.decisions.slice(1)" :key="index"><h3>{{ decisionLabels[decision.outcome] }}</h3><p>{{ decision.rationale }}</p><p>Remaining uncertainty: {{ decision.uncertainties }}</p><p>Revisit when: {{ decision.revisitCriteria }}</p><ul><li v-for="reference in decision.evidenceRefs" :key="`${reference.kind}:${reference.id}`"><a :href="`#${reference.kind}-${reference.id}`">{{ citationLabel(reference) }}</a></li></ul><small>{{ formatDate(decision.confirmedAt) }}</small></div></details>
+          <small>This shared record reflects the latest confirmed decision for this run.</small>
+        </section>
+        <section v-if="report.failures.length" class="report-section">
+          <header><h2>Failure evidence</h2></header>
+          <div v-for="failure in report.failures" :id="`failure-${failure.id}`" :key="failure.id"><h3>{{ failure.title }}</h3><p>{{ failure.summary }}</p></div>
+        </section>
+
         <section class="metric-grid" aria-label="Court metrics">
           <article v-for="metric in report.metrics" :key="metric.label">
             <span>{{ metric.label }}</span>
@@ -156,7 +179,7 @@ onMounted(loadReport);
         <section class="report-section verdict-section">
           <header><div><span class="section-badge">Court</span><h2>Deterministic findings</h2></div><span>{{ report.verdicts.length }} tests</span></header>
           <div class="verdict-list">
-            <article v-for="verdict in report.verdicts" :key="verdict.id">
+            <article v-for="verdict in report.verdicts" :id="`verdict-${verdict.id}`" :key="verdict.id">
               <StatusBadge :status="verdict.status" />
               <div><h3>{{ verdict.category }}</h3><p>{{ verdict.finding }}</p></div>
               <dl><div><dt>Observed</dt><dd>{{ verdict.measure }}</dd></div><div><dt>Threshold</dt><dd>{{ verdict.threshold }}</dd></div></dl>
@@ -181,7 +204,7 @@ onMounted(loadReport);
           <div class="table-scroll">
             <table>
               <thead><tr><th>Symbol</th><th>Entry</th><th>Exit</th><th>Fills</th><th>Costs</th><th>Net</th><th>Reason</th></tr></thead>
-              <tbody><tr v-for="trade in report.trades" :key="trade.id"><td><strong>{{ trade.symbol }}</strong></td><td>{{ formatDate(trade.entryDate) }}</td><td>{{ formatDate(trade.exitDate) }}</td><td>{{ formatMoney(trade.entryPrice) }} → {{ formatMoney(trade.exitPrice) }}</td><td>{{ formatMoney(trade.costs) }}</td><td :class="trade.netProfit >= 0 ? 'positive' : 'negative'">{{ trade.netProfit >= 0 ? "+" : "−" }}{{ formatMoney(Math.abs(trade.netProfit)) }}</td><td>{{ trade.exitReason }}</td></tr></tbody>
+              <tbody><tr v-for="trade in report.trades" :id="`trade-${trade.id}`" :key="trade.id"><td><strong>{{ trade.symbol }}</strong></td><td>{{ formatDate(trade.entryDate) }}</td><td>{{ formatDate(trade.exitDate) }}</td><td>{{ formatMoney(trade.entryPrice) }} → {{ formatMoney(trade.exitPrice) }}</td><td>{{ formatMoney(trade.costs) }}</td><td :class="trade.netProfit >= 0 ? 'positive' : 'negative'">{{ trade.netProfit >= 0 ? "+" : "−" }}{{ formatMoney(Math.abs(trade.netProfit)) }}</td><td>{{ trade.exitReason }}</td></tr></tbody>
             </table>
             <p v-if="!report.trades.length" class="empty-copy">No completed trades were returned.</p>
           </div>

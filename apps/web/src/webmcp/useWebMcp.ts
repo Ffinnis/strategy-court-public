@@ -5,6 +5,8 @@ import {
   replayAdvanceJsonSchema,
   strategyDefinitionJsonSchema,
   variantRequestsJsonSchema,
+  decisionFieldsSchema,
+  parseDecisionFields,
   type DataSnapshotPolicy,
   type ReplayAdvanceMode,
 } from "@strategy-court/schemas";
@@ -12,7 +14,9 @@ import { getCurrentScope, onScopeDispose, readonly, ref, watch, type DeepReadonl
 import { ApiError, apiRequest, unwrap } from "@/services/api";
 import { normalizeCase, useCourtStore } from "@/stores/court";
 import { catalogPage, ToolResults } from "@/webmcp/results";
-import type { StrategyDefinition, StrategyVersion } from "@/types";
+import type { CaseInput, StrategyDefinition, StrategyVersion } from "@/types";
+import { validateCaseIntake } from "@/lib/case-intake-validation";
+import { investigationGuidance } from "@/services/investigationGuidance";
 import {
   disposeWebMcpTools,
   reconcileWebMcpTools,
@@ -55,6 +59,13 @@ const definition: Schema = {
 const sharedRun = cloneObjectSchema(courtRunRequestJsonSchema);
 const sharedDateRange = sharedRun.properties.dateRange as ObjectSchema;
 const date = described(sharedDateRange.properties.start!, "Calendar date in YYYY-MM-DD format. Must match the active case range.");
+const caseIntakeProperties = {
+  requestId: { type: "string", minLength: 8, maxLength: 120, pattern: "^[A-Za-z0-9_-]+$" },
+  name: { type: "string", minLength: 3, maxLength: 90 }, description: { type: "string", minLength: 20, maxLength: 2000 },
+  symbols: { type: "array", minItems: 1, maxItems: 5, uniqueItems: true, items: { type: "string" } },
+  startDate: date, endDate: date, initialCapital: { type: "number", minimum: 1000, maximum: 10000000 },
+  commissionBpsPerSide: { type: "number", minimum: 0, maximum: 100 }, slippageBpsPerSide: { type: "number", minimum: 0, maximum: 100 },
+};
 const sharedReplayAdvance = cloneObjectSchema(replayAdvanceJsonSchema);
 const replayIncrement = described(sharedReplayAdvance.properties.mode!, "How far to reveal the active hidden-period replay.");
 const sharedVariant = cloneObjectSchema((variantRequestsJsonSchema as unknown as { items: unknown }).items);
@@ -190,20 +201,14 @@ export function transformAgentFormula(value: unknown): unknown {
 }
 
 function nextActions(store: ReturnType<typeof useCourtStore>): string[] {
-  if (!store.currentCase) return ["Create or open a case in the visible app, then call get_case_context without a caseId."];
+  if (!store.currentCase) return ["Use create_case with the user's stated idea and reviewed test settings, or open an existing case in the app."];
   if (!store.activeVersion) return ["Call create_strategy_draft for the active case."];
   if (!store.confirmed) return ["Ask the user to review and confirm the visible strategy interpretation. Confirmation is intentionally user-controlled."];
   if (store.running) return ["Call get_case_context to check the queued or running Court result. Do not start a duplicate run."];
   if (store.courtInvalid) return ["Read the invalid reason in get_case_context. Correct the data configuration, then retry run_court."];
   if (!store.courtComplete) return ["Call run_court with the active version and the case's locked date range."];
-  const actions: string[] = [];
-  if (store.monitoringCandidate && store.monitoringStatus?.strategyVersionId !== store.monitoringCandidate.id) {
-    actions.push("Call get_monitoring_status to read saved latest-bar evidence. Use refresh_monitoring only when the user wants a new market evaluation.");
-  }
-  if (store.variants.length === 0) actions.push("Inspect a returned failure, then create up to three controlled strategy variants.");
-  if (!store.replay && store.eligibleReplayVersions.length) actions.push("Start replay probation for a replay-eligible version. Compare versions first if variants exist.");
-  else if (store.replay) actions.push("Read get_monitoring_status, then advance the hidden-period replay separately with advance_replay.");
-  return actions;
+  const guidance = investigationGuidance(store.recordedDecision, store.result?.summaryLabel);
+  return [guidance.detail];
 }
 
 function snapshot(store: ReturnType<typeof useCourtStore>) {
@@ -214,6 +219,9 @@ function snapshot(store: ReturnType<typeof useCourtStore>) {
     courtStatus: store.latestRun?.status ?? "not_started",
     summaryLabel: store.result?.summaryLabel ?? null,
     activeTab: store.activeTab,
+    evidenceSelection: store.evidenceSelection ? { ...store.evidenceSelection, inspectorVisible: store.activeTab === "evidence", focus: store.evidenceFocus } : null,
+    decision: store.recordedDecision ? { id: store.recordedDecision.id, outcome: store.recordedDecision.outcome, runId: store.recordedDecision.runId } : null,
+    decisionDraftId: store.decisionDraft?.id ?? null,
     variantCount: store.variants.length,
     replayId: store.replay?.id ?? null,
     replayStatus: store.replay?.status ?? "not_started",
@@ -235,7 +243,7 @@ export interface WebMcpRegistrationState {
   errors: WebMcpRegistrationFailure[];
 }
 
-export function useWebMcp(enabled: Readonly<Ref<boolean>> = ref(true)): DeepReadonly<Ref<WebMcpRegistrationState>> {
+export function useWebMcp(enabled: Readonly<Ref<boolean>> = ref(true), navigateToCase?: (caseId: string) => Promise<unknown>): DeepReadonly<Ref<WebMcpRegistrationState>> {
   const store = useCourtStore();
   const registration = ref<WebMcpRegistrationState>({ status: "registering", expectedToolNames: [], registeredToolNames: [], errors: [] });
   const registrations: WebMcpRegistrations = new Map();
@@ -288,6 +296,33 @@ export function useWebMcp(enabled: Readonly<Ref<boolean>> = ref(true)): DeepRead
   const tools = (): ModelContextTool[] => {
     const result: ModelContextTool[] = [
       {
+        name: "create_case", title: "Create case",
+        description: "Create and open a case from the user's stated trading idea and proposed test settings. Do not invent missing entry or exit rules. This saves setup only; draft exact rules separately and leave confirmation to the user. Reuse requestId on retries.",
+        inputSchema: object(caseIntakeProperties, Object.keys(caseIntakeProperties)),
+        annotations:{readOnlyHint:false,untrustedContentHint:true},
+        execute: execute(async (input,signal) => {
+          if (!input || typeof input !== "object" || Array.isArray(input)) throw new Error("Expected case settings as an object.");
+          const unknownFields = Object.keys(input).filter(key => !Object.hasOwn(caseIntakeProperties, key));
+          if (unknownFields.length) throw new Error(`Unsupported case fields: ${unknownFields.join(", ")}.`);
+          const requestId = input.requestId;
+          const key = caseIntakeProperties.requestId;
+          if (typeof requestId !== "string" || requestId.length < key.minLength || requestId.length > key.maxLength || !new RegExp(key.pattern).test(requestId)) {
+            throw new Error("requestId must contain 8 to 120 letters, numbers, underscores or hyphens. Reuse it when retrying the same settings.");
+          }
+          for (const field of ["name", "description"] as const) {
+            if (typeof input[field] === "string" && input[field].length > caseIntakeProperties[field].maxLength) throw new Error(`${field} exceeds the allowed length.`);
+          }
+          const errors = validateCaseIntake(input as unknown as CaseInput,new Date().toISOString().slice(0,10));
+          if (Object.keys(errors).length) throw new Error(Object.values(errors).join(" "));
+          const id = await store.createCase(input as unknown as CaseInput,false,"agent",signal,requestId);
+          if (!id) throw new Error(store.error ?? "Case creation failed.");
+          let opened = false;
+          try { if (navigateToCase) { await navigateToCase(id); opened = true; } } catch { /* The case is saved; never create again just to navigate. */ }
+          return state(opened ? "Case opened. Read the indicator catalog, then draft the exact rules for human review." : `Case saved. Open /case/${id} to continue; do not repeat creation.`,
+            {caseId:id,path:`/case/${id}`,opened,settings:store.currentCase ? {symbols:store.currentCase.symbols,startDate:store.currentCase.startDate,endDate:store.currentCase.endDate,initialCapital:store.currentCase.initialCapital,costs:store.caseCosts} : null},[id]);
+        }),
+      },
+      {
         name: "get_case_context",
         title: "Get case context",
         description: "Read case IDs, locked settings, verdicts, and next actions. Use detail=strategy for exact active rules without price history, or detail=full for all evidence in pages.",
@@ -295,7 +330,7 @@ export function useWebMcp(enabled: Readonly<Ref<boolean>> = ref(true)): DeepRead
         annotations: { readOnlyHint: true, untrustedContentHint: true },
         execute: execute(async (input, signal) => {
           const requestedId = typeof input.caseId === "string" && input.caseId ? input.caseId : store.currentCase?.id;
-          if (!requestedId) return state("No case is active. Create or open a case in the visible app first.", { case: null });
+          if (!requestedId) return state("No case is active. Use create_case with the user's stated idea, or open an existing case.", { case: null });
           let current;
           if (store.currentCase?.id === requestedId) {
             if (!await store.refreshCase("agent", signal)) throw new Error(store.error ?? "The active case could not be refreshed.");
@@ -304,9 +339,14 @@ export function useWebMcp(enabled: Readonly<Ref<boolean>> = ref(true)): DeepRead
             current = normalizeCase(unwrap(await agentApi(`/api/cases/${encodeURIComponent(requestedId)}`, signal), "case"));
           }
           const activeVersionId = current.id === store.currentCase?.id ? store.activeVersion?.id : current.activeVersionId;
-          const latest = current.runs.find(run => run.versionId === activeVersionId) ?? current.runs[0];
+          const latest = current.runs.find(run => run.versionId === activeVersionId);
           const summary = {
             id: current.id, name: current.name, description: current.description,
+            sampleId: current.sampleId ?? null,
+            suggestedDataPolicy: current.sampleId ? "saved_sample" : "refresh",
+            evidenceSelection: current.id === store.currentCase?.id ? store.evidenceSelection : null,
+            decisions: (current.decisions ?? []).filter(item => item.runId === latest?.id),
+            evidenceIds: latest?.result ? { verdicts: latest.result.verdicts.map(item=>({kind:"verdict",id:item.id})), failures: latest.result.failures.map(item=>({kind:"failure",id:item.id})), trades: latest.result.trades.map(item=>({kind:"trade",id:item.id,symbol:item.symbol,entryDate:item.entryDate,exitDate:item.exitDate})) } : null,
             symbols: current.symbols, startDate: current.startDate, endDate: current.endDate, initialCapital: current.initialCapital,
             activeVersionId,
             versions: current.versions.slice(-10).map(version => ({ id: version.id, name: version.definition.name, confirmed: Boolean(version.confirmed || version.confirmedAt), evaluationInformed: version.evaluationInformed })),
@@ -415,8 +455,8 @@ export function useWebMcp(enabled: Readonly<Ref<boolean>> = ref(true)): DeepRead
           endDate: date,
           courtProfile: described(sharedRun.properties.courtProfile!, "Court test profile. The MVP supports balanced."),
           dataSnapshotPolicy: {
-            ...described(sharedRun.properties.dataSnapshotPolicy!, "Omit to use real Alpaca data. Use prefer_cache for cached data or frozen for synthetic demo prices, never investment evidence."),
-            default: "refresh",
+            ...described(sharedRun.properties.dataSnapshotPolicy!, "Use saved_sample for a prepared sample, refresh for a fresh Alpaca request, prefer_cache for compatible cached real data, or frozen for synthetic software testing."),
+            default: store.currentCase?.sampleId ? "saved_sample" : "refresh",
           },
         }, ["caseId", "strategyVersionId", "startDate", "endDate", "courtProfile"]),
         annotations: { readOnlyHint: false, untrustedContentHint: false },
@@ -424,7 +464,8 @@ export function useWebMcp(enabled: Readonly<Ref<boolean>> = ref(true)): DeepRead
           const current = visibleCase(input);
           if (input.strategyVersionId !== store.activeVersion?.id) throw new Error("Use the active confirmed strategyVersionId returned by get_case_context.");
           if (input.startDate !== current.startDate || input.endDate !== current.endDate) throw new Error(`Use the locked case range ${current.startDate} through ${current.endDate}.`);
-          const runId = await store.runCourt(input.dataSnapshotPolicy as DataSnapshotPolicy | undefined, "balanced", "agent", signal);
+          const policy = input.dataSnapshotPolicy as DataSnapshotPolicy | undefined ?? (current.sampleId ? "saved_sample" : "refresh");
+          const runId = await store.runCourt(policy, "balanced", "agent", signal);
           if (!runId) throw new Error(store.error ?? "Court did not create a completed run.");
           const run = store.currentCase?.runs.find((item) => item.id === runId);
           return state(`Court run ${runId} ended with status ${run?.status ?? "unknown"}. Call get_case_context for its verdicts or invalid reason.`, {
@@ -441,17 +482,41 @@ export function useWebMcp(enabled: Readonly<Ref<boolean>> = ref(true)): DeepRead
 
     if (store.courtComplete && !store.courtInvalid) result.push(
       {
+        name:"propose_case_decision",title:"Propose investigation decision",
+        description:"Save a private draft conclusion citing this run's evidence. The user reviews and confirms it in the Court screen. A rejection is a valid outcome; do not automatically optimize a weak strategy.",
+        inputSchema: object({caseId,runId:id,fields:decisionFieldsSchema,requestId:{type:"string",minLength:8,maxLength:120,pattern:"^[A-Za-z0-9_-]+$"}},["caseId","runId","fields","requestId"]),
+        annotations:{readOnlyHint:false,untrustedContentHint:true},
+        execute:execute(async (input,signal)=>{
+          visibleCase(input);
+          if (input.runId !== store.latestRun?.id) throw new Error("Use the currently displayed completed run.");
+          const decision = await store.proposeDecision(parseDecisionFields(input.fields),String(input.requestId),"agent",signal);
+          if (!decision) throw new Error(store.decisionError ?? "Could not save decision draft.");
+          return state("Decision draft saved. Ask the user to review and confirm it in the Court screen.",{decision},[decision.id]);
+        }),
+      },
+      {
+        name:"inspect_trade",title:"Inspect trade",
+        description:"Select one trade in the displayed completed run and focus its chart period. Read assumptions and historical bars for that exact trade.",
+        inputSchema:object({runId:id,tradeId:id},["runId","tradeId"]),
+        annotations:{readOnlyHint:true,untrustedContentHint:true},
+        execute:execute(async(input,signal)=>{
+          await store.selectEvidence(String(input.runId),{kind:"trade",id:String(input.tradeId)},"agent",signal);
+          const trade = store.selectedTrade;
+          if (!trade) return state("Selection changed while inspecting. Read the current context.",{trade:null});
+          return state("Selected the trade in the visible inspector and chart.",{trade,assumptions:store.result?.assumptions,
+            marketBars:store.result?.marketEvidence[trade.symbol]?.filter(bar=>bar.date>=trade.entryDate && bar.date<=trade.exitDate),
+            relatedFailureIds:store.result?.failures.filter(item=>item.dateRange && item.dateRange.start<=trade.exitDate && item.dateRange.end>=trade.entryDate && item.symbols.includes(trade.symbol)).map(item=>item.id)});
+        }),
+      },
+      {
         name: "inspect_failure_period",
         title: "Inspect failure period",
         description: "Load trades, market regime, indicator values, costs, and equity evidence for one failure from the active completed Court run.",
         inputSchema: object({ runId: described(id, "Completed Court run ID from get_case_context."), failureId: described(id, "Failure ID attached to a returned verdict.") }, ["runId", "failureId"]),
         annotations: { readOnlyHint: true, untrustedContentHint: true },
         execute: execute(async (input, signal) => {
-          if (!store.currentCase?.runs.some((run) => run.id === input.runId)) throw new Error("Use a runId from the active case returned by get_case_context.");
-          const failure = await store.inspectFailure(String(input.runId), String(input.failureId), "agent", signal);
-          if (!failure) throw new Error(store.failureEvidenceError ?? "Failure evidence could not be loaded.");
-          store.activeTab = "evidence";
-          return state(`Loaded failure ${String(input.failureId)}. Use its evidence to form a bounded variant hypothesis.`, { failure });
+          const failure = await store.selectEvidence(String(input.runId), {kind:"failure",id:String(input.failureId)}, "agent", signal);
+          return state(failure ? `Selected failure ${String(input.failureId)}. Use the evidence to assess whether to stop or investigate further.` : "Selection changed during inspection. Read the current context.", { failure });
         }),
       },
       {
@@ -490,7 +555,7 @@ export function useWebMcp(enabled: Readonly<Ref<boolean>> = ref(true)): DeepRead
       {
         name: "start_replay_probation",
         title: "Start replay probation",
-        description: "Start hidden-period replay for an eligible completed strategy version after comparing its Court result with the alternatives.",
+        description: "Start hidden-period replay for an eligible completed strategy version after reviewing its Court evidence. Prepared samples require a pinned replay snapshot. Recording a decision does not start replay.",
         inputSchema: object({ caseId, strategyVersionId: versionId, startDate: described(date, "First reserved replay date."), endDate: described(date, "Last reserved replay date.") }, ["caseId", "strategyVersionId", "startDate", "endDate"]),
         annotations: { readOnlyHint: false, untrustedContentHint: false },
         execute: execute(async (input, signal) => {
@@ -578,6 +643,8 @@ export function useWebMcp(enabled: Readonly<Ref<boolean>> = ref(true)): DeepRead
   const reconcile = async () => {
     if (disposed) return;
     if (!enabled.value) {
+      store.clearEvidenceSelection();
+      store.currentCase = null;
       disposeWebMcpTools(registrations);
       activeContext = null;
       publish({ status: "unsupported", expectedToolNames: [], registeredToolNames: [], errors: [] });

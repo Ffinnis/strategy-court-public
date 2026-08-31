@@ -1,5 +1,7 @@
-import { computed, ref } from "vue";
+import { computed, ref, watch } from "vue";
 import { defineStore } from "pinia";
+import { tradeEvidenceId, type DecisionFields, type InvestigationDecision, type DataSnapshotPolicy } from "@strategy-court/schemas";
+import { useEvidenceSelection } from "./evidence";
 import { sampleDefinition, sampleInput } from "@/data/demo";
 import { apiRequest, unwrap, type ApiActor } from "@/services/api";
 import type {
@@ -50,7 +52,7 @@ function metricCards(value: unknown): Metric[] {
 function normalizeTrade(value: unknown, index: number): Trade {
   const trade = record(value);
   return {
-    id: String(trade.id ?? `${trade.symbol ?? "trade"}-${trade.entryDate ?? index}-${trade.exitDate ?? index}`),
+    id: tradeEvidenceId(index),
     symbol: String(trade.symbol ?? "N/A"), entryDate: String(trade.entryDate ?? ""), entryPrice: finite(trade.entryPrice),
     exitDate: String(trade.exitDate ?? ""), exitPrice: finite(trade.exitPrice), quantity: finite(trade.quantity),
     netProfit: finite(trade.netProfit), costs: finite(trade.costs), exitReason: humanize(trade.exitReason),
@@ -101,7 +103,7 @@ export function normalizeMarketEvidence(value: unknown): MarketEvidence {
   return evidence;
 }
 
-export function normalizeFailure(value: unknown, index: number, fallbackTrades: Trade[] = []): FailureEvidence {
+export function normalizeFailure(value: unknown, index: number, fallbackTrades: Trade[] = [], runTrades: Trade[] = []): FailureEvidence {
   const failure = record(value);
   const evidence = record(failure.evidence);
   const periodRecord = record(failure.period ?? failure.dateRange);
@@ -110,7 +112,12 @@ export function normalizeFailure(value: unknown, index: number, fallbackTrades: 
   const costs = record(failure.costs);
   const indicatorEvidence = record(failure.indicatorEvidence);
   const explanationInputs = failure.explanationInputs ?? failure.evidence;
-  const trades = (Array.isArray(failure.trades) ? failure.trades : fallbackTrades).map(normalizeTrade);
+  const trades = Array.isArray(failure.trades) ? failure.trades.map((value, index) => {
+    const trade = normalizeTrade(value, index);
+    // A period's filtered array must never manufacture an ID from its local index.
+    const original = runTrades.find(item => item.symbol === trade.symbol && item.entryDate === trade.entryDate && item.exitDate === trade.exitDate);
+    return { ...trade, id: original?.id };
+  }) : fallbackTrades;
   const inputs: Array<{ label: string; value: string }> = [];
   const addInputs = (prefix: string, source: Record<string, unknown>) => {
     for (const [key, item] of Object.entries(source)) {
@@ -127,6 +134,7 @@ export function normalizeFailure(value: unknown, index: number, fallbackTrades: 
     : String(failure.equityChange ?? "Not reported");
   return {
     id: String(failure.id ?? failure.category ?? `failure-${index + 1}`),
+    dateRange: start && end ? { start, end } : undefined,
     title: String(failure.title ?? humanize(failure.category ?? "Evidence finding")),
     period: String(typeof failure.period === "string" ? failure.period : start && end ? `${start} to ${end}` : "Range not reported"),
     summary: String(failure.summary ?? failure.finding ?? failure.explanation ?? failure.description ?? failure.message ?? "The API returned no written evidence summary."), equityChange,
@@ -171,9 +179,10 @@ function normalizeCourtResult(value: unknown, run: RunPayload): CourtResult | un
   });
   return {
     summaryLabel: summaryLabel || "Invalid", verdicts: verdictValues.map(normalizeVerdict), metrics: metricCards(metricsObject),
+    data: record(raw.data),
     equityCurve: equityValues.map((item) => { const point = record(item); return { date: String(point.date ?? ""), value: finite(point.value ?? point.equity), benchmark: typeof point.benchmark === "number" ? point.benchmark : undefined }; }),
     drawdownCurve: drawdownValues.map((item) => { const point = record(item); return { date: String(point.date ?? ""), value: -Math.abs(finite(point.value ?? point.drawdownPercent)) }; }),
-    trades, failures: (Array.isArray(raw.failures) ? raw.failures : []).map((item, index) => normalizeFailure(item, index)),
+    trades, failures: (Array.isArray(raw.failures) ? raw.failures : []).map((item, index) => normalizeFailure(item, index, [], trades)),
     assumptions: Object.fromEntries(Object.entries(record(raw.assumptions)).map(([key, item]) => [humanize(key), scalar(item)])),
     reproducibilityId: String(raw.reproducibilityId ?? run.reproducibilityId ?? "Not reported"),
     engineVersion: String(raw.engineVersion ?? run.engineVersion ?? "Not reported"),
@@ -350,6 +359,8 @@ export function normalizeCase(value: unknown, fallback?: CaseInput): CourtCase {
   });
   return {
     id: String(raw.id ?? ""), name: String(raw.name ?? fallback?.name ?? "Untitled Court case"), description: String(raw.description ?? fallback?.description ?? ""),
+    sampleId: typeof raw.sampleId === "string" ? raw.sampleId : null,
+    decisions: Array.isArray(raw.decisions) ? raw.decisions as InvestigationDecision[] : [],
     symbols: Array.isArray(raw.symbols) ? raw.symbols.map(String) : fallback?.symbols ?? [],
     startDate: String(raw.startDate ?? raw.dateFrom ?? fallback?.startDate ?? ""), endDate: String(raw.endDate ?? raw.dateTo ?? fallback?.endDate ?? ""),
     initialCapital: finite(raw.initialCapital, fallback?.initialCapital ?? 10_000), profile: humanize(raw.profile ?? raw.selectedProfile ?? "balanced"), status: String(raw.status ?? "draft"),
@@ -381,6 +392,11 @@ export const useCourtStore = defineStore("court", () => {
   const failureLoading = ref(false);
   const failureEvidenceCache = ref<Record<string, FailureEvidence>>({});
   const failureEvidenceError = ref<string | null>(null);
+  watch(() => currentCase.value?.id, () => {
+    failureEvidenceCache.value = {};
+    failureEvidenceError.value = null;
+    failureLoading.value = false;
+  }, { flush: "sync" });
   const error = ref<string | null>(null);
   const notice = ref<string | null>(null);
   const monitoringStatus = ref<LatestBarMonitoringStatus | null>(null);
@@ -408,7 +424,7 @@ export const useCourtStore = defineStore("court", () => {
   const confirmed = computed(() => versionConfirmed(activeVersion.value));
   const latestRun = computed(() => {
     const runs = currentCase.value?.runs ?? [];
-    return runs.find((run) => run.versionId === activeVersion.value?.id) ?? runs[0];
+    return runs.find((run) => run.versionId === activeVersion.value?.id);
   });
   const courtComplete = computed(() => (latestRun.value?.status === "completed" || latestRun.value?.status === "invalid") && Boolean(latestRun.value.result));
   const courtInvalid = computed(() => latestRun.value?.status === "invalid" && Boolean(latestRun.value.result));
@@ -426,6 +442,51 @@ export const useCourtStore = defineStore("court", () => {
     return (currentCase.value?.versions ?? []).find(versionConfirmed);
   });
 
+  const evidence = useEvidenceSelection({
+    scope: () => currentCase.value && activeVersion.value && latestRun.value?.status === "completed"
+      ? { caseId: currentCase.value.id, versionId: activeVersion.value.id, runId: latestRun.value.id } : null,
+    result: () => result.value,
+    failure: (runId,id) => failureEvidenceCache.value[`${runId}:${id}`],
+    inspect: (...args) => inspectFailure(...args),
+    open: () => { activeTab.value = "evidence"; },
+  });
+  const runDecisions = computed(() => (currentCase.value?.decisions ?? []).filter(item => item.runId === latestRun.value?.id));
+  const recordedDecision = computed(() => runDecisions.value.filter(item => item.state === "confirmed")
+    .sort((a,b) => (b.confirmedAt ?? "").localeCompare(a.confirmedAt ?? ""))[0]);
+  const decisionDraft = computed(() => runDecisions.value.find(item => item.state === "draft" && item.createdAt > (recordedDecision.value?.confirmedAt ?? "")));
+  const decisionSaving = ref(false);
+  const decisionError = ref<string | null>(null);
+  async function proposeDecision(fields: DecisionFields, requestId: string, actor: ApiActor = "user", signal?: AbortSignal): Promise<InvestigationDecision | null> {
+    const caseId = currentCase.value?.id;
+    const versionId = activeVersion.value?.id;
+    const runId = latestRun.value?.id;
+    if (!caseId || !versionId || !runId) return null;
+    decisionSaving.value = true; decisionError.value = null;
+    try {
+      const payload = await apiRequest<unknown>(`/api/cases/${encodeURIComponent(caseId)}/decision-drafts`,
+        { method:"POST", body:JSON.stringify({versionId,runId,requestId,fields}),signal },actor);
+      const decision = unwrap<InvestigationDecision>(payload,"decision");
+      if (currentCase.value?.id === caseId) {
+        await refreshCase(actor,signal);
+        if (currentCase.value?.id === caseId && latestRun.value?.id === runId) activeTab.value = "court";
+      }
+      return decision;
+    } catch(issue) { decisionError.value = messageFor(issue,"Could not save the decision draft."); return null; }
+    finally { decisionSaving.value = false; }
+  }
+  async function confirmDecision(decisionId: string, fields: DecisionFields, expectedPredecessorId: string | null): Promise<boolean> {
+    const caseId = currentCase.value?.id;
+    if (!caseId) return false;
+    decisionSaving.value = true; decisionError.value = null;
+    try {
+      await apiRequest(`/api/cases/${encodeURIComponent(caseId)}/decisions/${encodeURIComponent(decisionId)}/confirm`,
+        { method:"POST",body:JSON.stringify({fields,expectedPredecessorId}) },"user");
+      if (currentCase.value?.id === caseId) await refreshCase();
+      return true;
+    } catch(issue) { decisionError.value = messageFor(issue,"Could not record the decision."); return false; }
+    finally { decisionSaving.value = false; }
+  }
+
   function clearMonitoringState(): void {
     monitoringStatus.value = null;
     monitoringEvaluation.value = null;
@@ -439,11 +500,13 @@ export const useCourtStore = defineStore("court", () => {
 
   async function refreshCase(actor: ApiActor = "user", signal?: AbortSignal): Promise<boolean> {
     if (!currentCase.value) return false;
+    const requestedCaseId = currentCase.value.id;
     try {
       const payload = await apiRequest<unknown>(`/api/cases/${encodeURIComponent(currentCase.value.id)}`, { signal }, actor);
       const rawCase = unwrap(payload, "case");
       const next = normalizeCase(rawCase);
       if (!next.id) throw new Error("The API returned a case without an ID.");
+      if (currentCase.value?.id !== requestedCaseId) return false;
       caseCosts.value = normalizeCaseCosts(rawCase, caseCosts.value);
       const nextActiveId = next.activeVersionId ?? next.versions.at(-1)?.id;
       if (selectedVersionId.value && !next.versions.some((version) => version.id === selectedVersionId.value)) selectedVersionId.value = null;
@@ -457,37 +520,41 @@ export const useCourtStore = defineStore("court", () => {
     }
   }
 
+  let sampleRequestId: string | null = null;
   async function createSample(): Promise<string | null> {
-    const id = await createCase(sampleInput, true);
-    if (id) return id;
-    error.value = error.value
-      ? `${error.value} Opening the sample requires the Court API. Check the API, then retry.`
-      : "The sample could not reach the Court API. Check the API, then retry.";
-    return null;
-  }
-
-  async function createCase(input: CaseInput, withDraft = false): Promise<string | null> {
-    loading.value = true; error.value = null; notice.value = null;
-    clearMonitoringState();
+    sampleRequestId ??= crypto.randomUUID();
     try {
-      const payload = await apiRequest<unknown>("/api/cases", { method: "POST", body: JSON.stringify({ ...input, commissionBps: input.commissionBpsPerSide, slippageBps: input.slippageBpsPerSide, courtProfile: "balanced" }) });
+      const payload = await apiRequest<unknown>("/api/samples/rsi-pullback/cases", {method:"POST",body:JSON.stringify({requestId:sampleRequestId})});
+      const created = normalizeCase(unwrap(payload,"case"));
+      currentCase.value = created; selectedVersionId.value = null;
+      sampleRequestId = null;
+      return created.id;
+    } catch(issue) { error.value = `${messageFor(issue,"Could not open saved Alpaca history.")} Check the API, then retry.`; return null; }
+  }
+  const createSyntheticSample = () => createCase(sampleInput,true);
+
+  async function createCase(input: CaseInput, withDraft = false, actor: ApiActor = "user", signal?: AbortSignal, requestId?: string): Promise<string | null> {
+    loading.value = true; error.value = null; notice.value = null;
+    try {
+      const payload = await apiRequest<unknown>("/api/cases", { method: "POST", signal, body: JSON.stringify({ ...input, requestId, commissionBps: input.commissionBpsPerSide, slippageBps: input.slippageBpsPerSide, courtProfile: "balanced" }) }, actor);
       const rawCase = unwrap(payload, "case");
       const created = normalizeCase(rawCase, input);
       if (!created.id) throw new Error("The API did not return the created case ID.");
+      clearMonitoringState();
       caseCosts.value = normalizeCaseCosts(rawCase, input);
       currentCase.value = created;
       selectedVersionId.value = null;
-      await refreshCase();
+      await refreshCase(actor, signal);
       if (withDraft && currentCase.value?.versions.length === 0) {
         await createDraft(
           { ...structuredClone(sampleDefinition), name: currentCase.value.name, universe: [...currentCase.value.symbols] },
           currentCase.value.description,
-          "user",
+          actor, signal,
         );
       }
-      return currentCase.value?.id ?? null;
+      return created.id;
     } catch (issue) {
-      currentCase.value = null; error.value = messageFor(issue, "Could not create this Court case."); return null;
+      error.value = messageFor(issue, "Could not create this Court case."); return null;
     } finally { loading.value = false; }
   }
 
@@ -538,7 +605,7 @@ export const useCourtStore = defineStore("court", () => {
     finally { mutating.value = false; }
   }
 
-  async function runCourt(dataSnapshotPolicy: "frozen" | "prefer_cache" | "refresh" = "refresh", courtProfile: "balanced" = "balanced", actor: ApiActor = "user", signal?: AbortSignal): Promise<string | null> {
+  async function runCourt(dataSnapshotPolicy: DataSnapshotPolicy = "refresh", courtProfile: "balanced" = "balanced", actor: ApiActor = "user", signal?: AbortSignal): Promise<string | null> {
     if (!currentCase.value || !activeVersion.value || !confirmed.value) return null;
     mutating.value = true; error.value = null; activeTab.value = "court";
     try {
@@ -578,7 +645,7 @@ export const useCourtStore = defineStore("court", () => {
     if (!currentCase.value || !variantParentVersion.value || !variantParentResult.value || variants.value.length >= 3) return [];
     if (!requested.length) { error.value = "Add at least one controlled variant."; return []; }
     mutating.value = true; error.value = null;
-    const proposals = requested.map((proposal) => ({ ...proposal, patch: proposal.structuredPatch ?? proposal.patch }));
+    const proposals = requested.map(({ structuredPatch, ...proposal }) => ({ ...proposal, patch: structuredPatch ?? proposal.patch }));
     try {
       const payload = await apiRequest<Record<string, unknown>>(`/api/cases/${encodeURIComponent(currentCase.value.id)}/variants`, { method: "POST", body: JSON.stringify({ parentVersionId: variantParentVersion.value.id, variants: proposals }), signal }, actor);
       const createdVersions = Array.isArray(payload.versions) ? payload.versions.map((item) => record(item)) : [];
@@ -670,33 +737,38 @@ export const useCourtStore = defineStore("court", () => {
   }
 
   async function inspectFailure(runId: string, failureId: string, actor: ApiActor = "user", signal?: AbortSignal): Promise<FailureEvidence | null> {
+    const requestCaseId = currentCase.value?.id;
     const cacheKey = `${runId}:${failureId}`;
     if (failureEvidenceCache.value[cacheKey]) return failureEvidenceCache.value[cacheKey];
     const local = result.value?.failures.find((item) => item.id === failureId);
+    const runTrades = result.value?.trades ?? [];
     failureLoading.value = true; failureEvidenceError.value = null;
     try {
       const payload = await apiRequest<unknown>(`/api/court-runs/${encodeURIComponent(runId)}/failures/${encodeURIComponent(failureId)}`, { signal }, actor);
-      const enriched = normalizeFailure(unwrap<unknown>(payload, "failure"), 0, local?.trades ?? []);
-      failureEvidenceCache.value[cacheKey] = enriched;
+      const enriched = normalizeFailure(unwrap<unknown>(payload, "failure"), 0, local?.trades ?? [], runTrades);
+      if (currentCase.value?.id === requestCaseId) failureEvidenceCache.value[cacheKey] = enriched;
       return enriched;
-    } catch (issue) { failureEvidenceError.value = messageFor(issue, "Could not load this period's evidence."); return null; }
+    } catch (issue) { if (currentCase.value?.id === requestCaseId && latestRun.value?.id === runId) failureEvidenceError.value = messageFor(issue, "Could not load this period's evidence."); return null; }
     finally { failureLoading.value = false; }
   }
 
   async function enrichFailures(actor: ApiActor = "user"): Promise<void> {
+    const requestCaseId = currentCase.value?.id;
     const runId = latestRun.value?.id;
     const failures = result.value?.failures ?? [];
+    const runTrades = result.value?.trades ?? [];
     if (!runId || failures.length === 0) return;
     const pending = failures.filter((failure) => !failureEvidenceCache.value[`${runId}:${failure.id}`]);
     if (!pending.length) return;
     failureLoading.value = true; failureEvidenceError.value = null;
     const outcomes = await Promise.allSettled(pending.map(async (failure) => {
       const payload = await apiRequest<unknown>(`/api/court-runs/${encodeURIComponent(runId)}/failures/${encodeURIComponent(failure.id)}`, {}, actor);
-      return normalizeFailure(unwrap<unknown>(payload, "failure"), 0, failure.trades);
+      return normalizeFailure(unwrap<unknown>(payload, "failure"), 0, failure.trades, runTrades);
     }));
+    if (currentCase.value?.id !== requestCaseId) return;
     outcomes.forEach((outcome, index) => { if (outcome.status === "fulfilled") failureEvidenceCache.value[`${runId}:${pending[index]!.id}`] = outcome.value; });
     const rejected = outcomes.find((outcome): outcome is PromiseRejectedResult => outcome.status === "rejected");
-    if (rejected) failureEvidenceError.value = messageFor(rejected.reason, "Some period details could not be loaded.");
+    if (rejected && latestRun.value?.id === runId) failureEvidenceError.value = messageFor(rejected.reason, "Some period details could not be loaded.");
     failureLoading.value = false;
   }
 
@@ -708,6 +780,7 @@ export const useCourtStore = defineStore("court", () => {
   function clearError(): void { error.value = null; }
 
   return {
+    ...evidence, runDecisions, recordedDecision, decisionDraft, decisionSaving, decisionError, proposeDecision, confirmDecision, createSyntheticSample,
     currentCase, comparison, loading, mutating, comparisonLoading, failureLoading, failureEvidenceCache, failureEvidenceError, error, notice, activeTab, caseCosts, webMcpSupported, registeredToolNames,
     monitoringStatus, monitoringEvaluation, monitoringLoading, monitoringError, monitoringLastSuccessAt, monitoringOperation,
     webMcpStatus, webMcpExpectedToolNames, webMcpErrors,

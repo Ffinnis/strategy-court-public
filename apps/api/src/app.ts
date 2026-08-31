@@ -31,6 +31,8 @@ import { latestMonitoringEvaluation, refreshLatestBarMonitoring } from "./servic
 import { buildIndicatorManifest, buildReportManifest, shareResponse } from "./services/sharing";
 import { indicatorDefinitionCsv, reportTradesCsv } from "./services/csv";
 import { Store } from "./store";
+import { requestKey, readDecisionFields } from "./services/decisions";
+import { createSampleCase, sampleSnapshot } from "./services/samples";
 import type { Actor, CourtRunRecord, ReplayRecord, StrategyVersionRecord } from "./types";
 
 const DEFAULT_ORIGINS = ["http://localhost:5173", "http://127.0.0.1:5173"];
@@ -538,9 +540,11 @@ export async function createApp(options: AppOptions = {}): Promise<ApiApp> {
           dateFrom: courtCase.dateFrom,
           dateTo: courtCase.dateTo,
         };
-        const cached = policy === "prefer_cache" ? await store.findSnapshot(marketRequest.symbols, marketRequest.dateFrom, marketRequest.dateTo) : null;
+        const provenance = (providerOverride ?? options.marketProvider)?.provenance ?? { provider: "alpaca", feed: process.env.ALPACA_FEED || "sip", adjustment: "all" };
+        const cached = policy === "prefer_cache" ? await store.findSnapshot(marketRequest.symbols, marketRequest.dateFrom, marketRequest.dateTo, provenance) : null;
         const providerPolicy = policy === "prefer_cache" ? "refresh" : policy;
-        const snapshot = cached ?? await store.saveSnapshot(await (providerOverride ?? options.marketProvider ?? selectMarketProvider(providerPolicy)).getSnapshot(marketRequest));
+        const snapshot = policy === "saved_sample" ? await sampleSnapshot(store, courtCase)
+          : cached ?? await store.saveSnapshot(await (providerOverride ?? options.marketProvider ?? selectMarketProvider(providerPolicy)).getSnapshot(marketRequest));
         await store.updateRun(run.id, { dataSnapshotId: snapshot.id, progress: { percent: 35, stage: "baseline" } }, ownerUserId);
         const execution = await courtExecutor({
           courtCase,
@@ -785,8 +789,37 @@ export async function createApp(options: AppOptions = {}): Promise<ApiApp> {
       }
 
       if (request.method === "POST" && path === "/api/cases") {
-        const courtCase = await store.createCase(caseInput(await body(request)), actor, ownerUserId);
+        const input = await body(request);
+        const courtCase = await store.createCase(caseInput(input), actor, ownerUserId, input.requestId === undefined ? undefined : requestKey(input.requestId));
         return json({ case: courtCase }, 201, headers);
+      }
+
+      const sampleMatch = path.match(/^\/api\/samples\/([^/]+)\/cases$/);
+      if (request.method === "POST" && sampleMatch) {
+        const input = await body(request);
+        const courtCase = await createSampleCase(store, sampleMatch[1]!, ownerUserId, actor === "agent" ? "agent" : "user", requestKey(input.requestId));
+        return json({ case: courtCase }, 201, headers);
+      }
+      const decisionsMatch = path.match(/^\/api\/cases\/([^/]+)\/decisions$/);
+      if (request.method === "GET" && decisionsMatch) {
+        await requireCase(store, decisionsMatch[1]!, ownerUserId);
+        return json({ decisions: await store.decisions.list(decisionsMatch[1]!, ownerUserId, url.searchParams.get("runId") ?? undefined) },200,headers);
+      }
+      const decisionDraftMatch = path.match(/^\/api\/cases\/([^/]+)\/decision-drafts$/);
+      if (request.method === "POST" && decisionDraftMatch) {
+        const input = await body(request);
+        const decision = await store.decisions.propose(decisionDraftMatch[1]!, ownerUserId, {
+          versionId: string(input.versionId,"versionId"), runId: string(input.runId,"runId"), requestId: requestKey(input.requestId), fields: readDecisionFields(input.fields),
+        },actor === "agent" ? "agent" : "user");
+        return json({ decision },201,headers);
+      }
+      const decisionConfirmMatch = path.match(/^\/api\/cases\/([^/]+)\/decisions\/([^/]+)\/confirm$/);
+      if (request.method === "POST" && decisionConfirmMatch) {
+        if (actor !== "user") throw new ApiError(403,"user_confirmation_required","Only the user may confirm an investigation decision.");
+        const input = await body(request);
+        if (input.expectedPredecessorId !== null && typeof input.expectedPredecessorId !== "string") throw new ApiError(422,"invalid_predecessor","Supply the reviewed predecessor ID, or null for the first decision.");
+        const decision = await store.decisions.confirm(decisionConfirmMatch[1]!,decisionConfirmMatch[2]!,ownerUserId,input.fields,input.expectedPredecessorId as string | null);
+        return json({ decision },200,headers);
       }
 
       const caseMatch = path.match(/^\/api\/cases\/([^/]+)$/);
@@ -875,7 +908,8 @@ export async function createApp(options: AppOptions = {}): Promise<ApiApp> {
           ? "balanced"
           : (() => { throw new ApiError(422, "validation_error", "Only the balanced Court profile is available"); })();
         const policy = typeof input.dataSnapshotPolicy === "string" ? input.dataSnapshotPolicy : "refresh";
-        if (!["frozen", "prefer_cache", "refresh"].includes(policy)) throw new ApiError(422, "validation_error", "Unsupported dataSnapshotPolicy");
+        if (!["frozen", "prefer_cache", "refresh", "saved_sample"].includes(policy)) throw new ApiError(422, "validation_error", "Unsupported dataSnapshotPolicy");
+        if (policy === "saved_sample") await sampleSnapshot(store, courtCase);
         const run = await store.createRun(caseId, versionId, profile, DOMAIN_ENGINE_VERSION, actor, ownerUserId);
         queueRun(run, policy, ownerUserId);
         return json({ run, runId: run.id }, 202, headers);
@@ -1029,22 +1063,24 @@ export async function createApp(options: AppOptions = {}): Promise<ApiApp> {
           dateFrom: courtCase.dateFrom,
           dateTo: reservedTo,
         };
-        let snapshot = courtSnapshot.dateFrom <= replayRequest.dateFrom && courtSnapshot.dateTo >= replayRequest.dateTo
+        const requestedPolicy = typeof input.dataSnapshotPolicy === "string"
+          ? input.dataSnapshotPolicy
+          : courtSnapshot.provider === "synthetic_demo" ? "frozen"
+          : courtCase.sampleId ? "saved_sample" : "prefer_cache";
+        if (!["frozen", "prefer_cache", "refresh", "saved_sample"].includes(requestedPolicy)) {
+          throw new ApiError(422, "invalid_snapshot_policy", "Replay dataSnapshotPolicy must be frozen, prefer_cache, refresh, or saved_sample");
+        }
+        let snapshot = requestedPolicy === "saved_sample" ? await sampleSnapshot(store, courtCase, reservedTo)
+          : courtSnapshot.dateFrom <= replayRequest.dateFrom && courtSnapshot.dateTo >= replayRequest.dateTo
           ? courtSnapshot
           : null;
         if (!snapshot) {
-          const requestedPolicy = typeof input.dataSnapshotPolicy === "string"
-            ? input.dataSnapshotPolicy
-            : courtSnapshot.provider === "synthetic_demo" ? "frozen" : "prefer_cache";
-          if (!["frozen", "prefer_cache", "refresh"].includes(requestedPolicy)) {
-            throw new ApiError(422, "invalid_snapshot_policy", "Replay dataSnapshotPolicy must be frozen, prefer_cache, or refresh");
-          }
           snapshot = requestedPolicy === "prefer_cache"
-            ? await store.findSnapshot(replayRequest.symbols, replayRequest.dateFrom, replayRequest.dateTo)
+            ? await store.findSnapshot(replayRequest.symbols, replayRequest.dateFrom, replayRequest.dateTo, courtSnapshot)
             : null;
           if (!snapshot) {
             const providerPolicy = requestedPolicy === "prefer_cache" ? "refresh" : requestedPolicy;
-            const provider = options.marketProvider ?? selectMarketProvider(providerPolicy);
+            const provider = options.marketProvider ?? selectMarketProvider(providerPolicy, courtSnapshot.feed);
             try {
               snapshot = await store.saveSnapshot(await provider.getSnapshot(replayRequest));
             } catch (error) {
@@ -1058,6 +1094,9 @@ export async function createApp(options: AppOptions = {}): Promise<ApiApp> {
               throw error;
             }
           }
+        }
+        if (snapshot.provider !== courtSnapshot.provider || snapshot.feed !== courtSnapshot.feed || snapshot.adjustment !== courtSnapshot.adjustment) {
+          throw new ApiError(422, "replay_provenance_mismatch", "Replay must use the same provider, feed and adjustment as its Court evidence.");
         }
         const replayBars = snapshot.bars.filter((bar) => bar.timestamp >= reservedFrom && bar.timestamp <= reservedTo);
         const coveredSymbols = new Set(replayBars.map((bar) => bar.symbol));

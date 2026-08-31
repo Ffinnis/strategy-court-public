@@ -13,6 +13,7 @@
     "dev:web": "bun --cwd apps/web dev",
     "dev:api": "bun --cwd apps/api dev",
     "db:migrate": "bun --cwd apps/api db:migrate",
+    "sample:prepare": "bun --env-file=.env apps/api/scripts/prepare-sample.ts",
     "build": "bun run notices:check && bun run fixtures:check && bun run --filter '*' build",
     "fixtures:check": "bun packages/fixtures/scripts/generate-synthetic-snapshot.ts --check",
     "fixtures:generate": "bun packages/fixtures/scripts/generate-synthetic-snapshot.ts && bun packages/fixtures/scripts/generate-expected-result.ts",

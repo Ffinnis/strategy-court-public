@@ -114,8 +114,8 @@ const variant = (stopLossPercent: number) => ({
 });
 
 describe("Stage C verifier regressions", () => {
-  test("uses a saved snapshot without constructing the unavailable Alpaca provider", async () => {
-    const app = await harness.app({ courtExecutor: courtResult });
+  test("uses a compatible cached snapshot for an explicitly configured provider", async () => {
+    const app = await harness.app({ courtExecutor: courtResult, marketProvider: new FixtureMarketProvider() });
     const { caseId, versionId } = await setup(app);
     const savedKey = process.env.ALPACA_API_KEY;
     const savedSecret = process.env.ALPACA_API_SECRET;
@@ -736,7 +736,7 @@ describe("Stage C verifier regressions", () => {
 
     const fixture = new FixtureMarketProvider();
     let calls = 0;
-    const countingProvider = { getSnapshot: async (input: Parameters<typeof fixture.getSnapshot>[0]) => { calls += 1; return fixture.getSnapshot(input); } };
+    const countingProvider = { provenance: fixture.provenance, getSnapshot: async (input: Parameters<typeof fixture.getSnapshot>[0]) => { calls += 1; return fixture.getSnapshot(input); } };
     const cachedApp = await harness.app({ courtExecutor: courtResult, marketProvider: countingProvider });
     const cachedSetup = await setup(cachedApp, false);
     await request(cachedApp, "POST", `/api/cases/${cachedSetup.caseId}/court-runs`, { strategyVersionId: cachedSetup.versionId, dataSnapshotPolicy: "frozen" });

@@ -11,6 +11,7 @@ export interface Bar {
 }
 
 export interface CaseRecord {
+  sampleId?: string | null;
   id: string;
   name: string;
   description: string;
@@ -130,6 +131,7 @@ export interface ShareTokenRecord {
 }
 
 export interface CaseContext extends CaseRecord {
+  decisions: import("@strategy-court/schemas").InvestigationDecision[];
   versions: StrategyVersionRecord[];
   runs: CourtRunRecord[];
   replays: ReplayRecord[];
