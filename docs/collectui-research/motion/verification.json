@@ -1,0 +1,74 @@
+[
+  {
+    "id": "01-tabs",
+    "duration": 5.966667,
+    "overflow": false,
+    "paused": true,
+    "ready": 4,
+    "time": 2
+  },
+  {
+    "id": "02-expanding-list",
+    "duration": 23.633333,
+    "overflow": false,
+    "paused": true,
+    "ready": 4,
+    "time": 4
+  },
+  {
+    "id": "03-toast-stack",
+    "duration": 8.085,
+    "overflow": false,
+    "paused": true,
+    "ready": 4,
+    "time": 3
+  },
+  {
+    "id": "04-morphing-create",
+    "duration": 13.738,
+    "overflow": false,
+    "paused": true,
+    "ready": 4,
+    "time": 2
+  },
+  {
+    "id": "05-tick-dial",
+    "duration": 10.783333,
+    "overflow": false,
+    "paused": true,
+    "ready": 4,
+    "time": 3
+  },
+  {
+    "id": "06-pixel-ripple",
+    "duration": 19.716667,
+    "overflow": false,
+    "paused": true,
+    "ready": 4,
+    "time": 3
+  },
+  {
+    "id": "02-expanding-list",
+    "duration": 23.633333,
+    "overflow": false,
+    "paused": true,
+    "ready": 4,
+    "time": 12
+  },
+  {
+    "id": "05-tick-dial",
+    "duration": 10.783333,
+    "overflow": false,
+    "paused": true,
+    "ready": 4,
+    "time": 5.5
+  },
+  {
+    "id": "02-expanding-list",
+    "duration": 23.633333,
+    "overflow": false,
+    "paused": true,
+    "ready": 4,
+    "time": 12
+  }
+]

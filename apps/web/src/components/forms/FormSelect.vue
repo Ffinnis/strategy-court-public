@@ -7,6 +7,7 @@ type AriaInvalid = boolean | "true" | "false" | "grammar" | "spelling";
 interface SelectOption {
   value: string;
   label: string;
+  description?: string;
   disabled?: boolean;
 }
 
@@ -58,7 +59,7 @@ function updatePlacement() {
   const gap = 15;
   const below = window.innerHeight - rect.bottom - gap;
   const above = rect.top - gap;
-  const desiredHeight = Math.min(304, Math.max(props.options.length, 1) * 38 + 12);
+  const desiredHeight = Math.min(304, props.options.reduce((height, option) => height + (option.description ? 76 : 38), 12));
   dropUp.value = below < desiredHeight && above > below;
   const availableSpace = Math.max(0, dropUp.value ? above : below);
   menuMaxHeight.value = availableSpace > 0
@@ -279,41 +280,43 @@ onBeforeUnmount(() => {
       <ChevronDown class="form-select__chevron" :size="16" :stroke-width="1.8" aria-hidden="true" />
     </button>
 
-    <div
-      v-if="isOpen"
-      :id="listboxId"
-      ref="listbox"
-      class="form-select__listbox"
-      role="listbox"
-      :aria-label="ariaLabel ?? placeholder"
-      :style="{ maxHeight: `${menuMaxHeight}px` }"
-    >
+    <Transition name="select-menu">
       <div
-        v-for="(option, index) in options"
-        :id="`${id}-option-${index}`"
-        :key="option.value"
-        class="form-select__option"
-        :class="{
-          'form-select__option--active': activeIndex === index,
-          'form-select__option--selected': model === option.value,
-          'form-select__option--disabled': option.disabled,
-        }"
-        role="option"
-        :aria-selected="model === option.value"
-        :aria-disabled="option.disabled || undefined"
-        :data-option-index="index"
-        @mousedown.prevent
-        @pointermove="!option.disabled && (activeIndex = index)"
-        @click="selectOption(index)"
+        v-if="isOpen"
+        :id="listboxId"
+        ref="listbox"
+        class="form-select__listbox"
+        role="listbox"
+        :aria-label="ariaLabel ?? placeholder"
+        :style="{ maxHeight: `${menuMaxHeight}px` }"
       >
-        <span>{{ option.label }}</span>
-        <Check v-if="model === option.value" :size="15" :stroke-width="2" aria-hidden="true" />
-      </div>
+        <div
+          v-for="(option, index) in options"
+          :id="`${id}-option-${index}`"
+          :key="option.value"
+          class="form-select__option"
+          :class="{
+            'form-select__option--active': activeIndex === index,
+            'form-select__option--selected': model === option.value,
+            'form-select__option--disabled': option.disabled,
+          }"
+          role="option"
+          :aria-selected="model === option.value"
+          :aria-disabled="option.disabled || undefined"
+          :data-option-index="index"
+          @mousedown.prevent
+          @pointermove="!option.disabled && (activeIndex = index)"
+          @click="selectOption(index)"
+        >
+          <span class="form-select__option-copy">{{ option.label }}<small v-if="option.description">{{ option.description }}</small></span>
+          <Check v-if="model === option.value" :size="15" :stroke-width="2" aria-hidden="true" />
+        </div>
 
-      <div v-if="!options.length" class="form-select__empty" role="option" aria-disabled="true">
-        No options available
+        <div v-if="!options.length" class="form-select__empty" role="option" aria-disabled="true">
+          No options available
+        </div>
       </div>
-    </div>
+    </Transition>
   </div>
 </template>
 
@@ -357,6 +360,11 @@ onBeforeUnmount(() => {
 .form-select__trigger:hover:not(:disabled) {
   border-color: #4a4a4a;
   background: #191919;
+}
+
+.form-select__trigger[aria-expanded="true"] {
+  border-color: #545454;
+  background: #1a1a1a;
 }
 
 .form-select__trigger:focus-visible {
@@ -437,6 +445,28 @@ onBeforeUnmount(() => {
   scrollbar-width: thin;
 }
 
+.select-menu-enter-active,
+.select-menu-leave-active {
+  transform-origin: top center;
+  transition: opacity 130ms ease, transform var(--duration-control) var(--ease-out);
+}
+
+.form-select.drop-up .select-menu-enter-active,
+.form-select.drop-up .select-menu-leave-active {
+  transform-origin: bottom center;
+}
+
+.select-menu-enter-from,
+.select-menu-leave-to {
+  opacity: 0;
+  transform: translateY(-6px) scale(.985);
+}
+
+.form-select.drop-up .select-menu-enter-from,
+.form-select.drop-up .select-menu-leave-to {
+  transform: translateY(6px) scale(.985);
+}
+
 .form-select.drop-up .form-select__listbox {
   top: auto;
   bottom: calc(100% + 7px);
@@ -458,6 +488,7 @@ onBeforeUnmount(() => {
 
 .form-select__option {
   cursor: pointer;
+  transition: color 100ms ease, background 100ms ease, box-shadow 100ms ease;
 }
 
 .form-select__option--active {
@@ -482,6 +513,9 @@ onBeforeUnmount(() => {
   flex: 0 0 auto;
 }
 
+.form-select__option-copy { min-width: 0; }
+.form-select__option-copy small { display: -webkit-box; margin-top: 6px; overflow: hidden; color: #999; font-size: 11px; font-weight: 400; line-height: 1.5; -webkit-line-clamp: 3; -webkit-box-orient: vertical; }
+
 .form-select__empty {
   justify-content: flex-start;
   color: #696969;
@@ -496,7 +530,10 @@ onBeforeUnmount(() => {
 
 @media (prefers-reduced-motion: reduce) {
   .form-select__trigger,
-  .form-select__chevron {
+  .form-select__chevron,
+  .select-menu-enter-active,
+  .select-menu-leave-active,
+  .form-select__option {
     transition: none;
   }
 }

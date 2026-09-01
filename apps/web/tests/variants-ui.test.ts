@@ -19,9 +19,9 @@ describe("variant builder", () => {
   test("keeps detailed result data behind progressive disclosure", () => {
     const source = readFileSync(new URL("../src/components/tabs/VariantsTab.vue", import.meta.url), "utf8");
 
-    expect(source).toContain("Baseline vs selected variant");
+    expect(source).toContain("Compare versions");
     expect(source).toContain("Full comparison");
-    expect(source).toContain("Exact rule changes");
-    expect(source.match(/<details/g)?.length).toBe(3);
+    expect(source).toContain("Hypothesis and rule changes");
+    expect(source).toContain('<details class="dial-disclosure">');
   });
 });

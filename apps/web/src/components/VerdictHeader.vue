@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed } from "vue";
-import { Bot, CalendarRange, ChevronDown, Eye, SlidersHorizontal, WandSparkles } from "lucide-vue-next";
+import { Bot, ChevronDown, Eye, SlidersHorizontal, WandSparkles } from "lucide-vue-next";
 import { useCourtStore } from "@/stores/court";
 import FormSelect from "@/components/forms/FormSelect.vue";
 import StatusBadge from "@/components/StatusBadge.vue";
@@ -12,12 +12,17 @@ const summary = computed(() => store.result?.summaryLabel ?? (store.confirmed ? 
 const symbols = computed(() => store.currentCase?.symbols ?? []);
 const versionOptions = computed(() => (store.currentCase?.versions ?? []).map((version, index) => ({
   value: version.id,
-  label: `Version ${version.versionNumber ?? index + 1}${version.evaluationInformed ? " · evaluation-informed" : ""}`,
+  label: `Version ${version.versionNumber ?? index + 1} · ${version.confirmed || version.confirmedAt ? "Confirmed" : "Draft"}${version.evaluationInformed ? " · evaluation-informed" : ""}`,
+  description: [version.createdAt ? formatDate(version.createdAt.slice(0,10)) : null, version.hypothesis || version.rationale, (() => { const run=store.currentCase?.runs.find(item=>item.versionId===version.id); return run ? `Run ${run.id.slice(0,8)} · ${run.status}` : "No run yet"; })()].filter(Boolean).join(" · "),
 })));
 const activeVersionId = computed({
   get: () => store.activeVersion?.id ?? "",
   set: (id: string) => store.selectVersion(id),
 });
+function goToVersionContext(tab: "strategy" | "variants", event: Event) {
+  (event.currentTarget as HTMLElement).closest("details")?.removeAttribute("open");
+  store.activeTab = tab;
+}
 const agentToolsLabel = computed(() => {
   if (store.webMcpStatus === "ready") return `${store.registeredToolNames.length} agent tools`;
   if (store.webMcpStatus === "registering") return "Connecting agent tools";
@@ -43,18 +48,11 @@ function formatDate(value?: string) {
 <template>
   <section class="verdict-header" aria-label="Current Court summary">
     <div class="verdict-header__identity">
-      <div class="verdict-header__instrument" :aria-label="`Universe: ${symbols.join(', ') || 'not set'}`">
-        <strong v-for="symbol in symbols" :key="symbol">{{ symbol }}</strong>
-        <span>Daily</span>
-      </div>
       <h1 class="verdict-header__case">{{ store.currentCase?.name }}</h1>
-    </div>
-
-    <div class="verdict-header__window">
-      <CalendarRange :size="15" aria-hidden="true" />
-      <span>{{ formatDate(store.currentCase?.startDate) }}</span>
-      <span class="verdict-header__range-separator" aria-hidden="true">—</span>
-      <span>{{ formatDate(store.currentCase?.endDate) }}</span>
+      <p class="verdict-header__context">
+        <span :aria-label="`Universe: ${symbols.join(', ') || 'not set'}`">{{ symbols.join(' · ') }} <span class="verdict-header__frequency">Daily</span></span>
+        <span>{{ formatDate(store.currentCase?.startDate) }} – {{ formatDate(store.currentCase?.endDate) }}</span>
+      </p>
     </div>
 
     <div class="verdict-header__controls">
@@ -69,10 +67,6 @@ function formatDate(value?: string) {
           placeholder="No versions"
           aria-label="Current strategy version"
         />
-      </div>
-
-      <div class="verdict-header__result">
-        <StatusBadge :status="summary" />
       </div>
 
       <details class="case-inspector">
@@ -105,6 +99,11 @@ function formatDate(value?: string) {
             <span><Bot :size="14" />{{ store.variants.length }}/3 variants · Evaluation {{ store.currentCase?.evaluationViewed ? "viewed" : "unseen" }}</span>
             <span><WandSparkles :size="13" />{{ agentToolsLabel }}</span>
           </div>
+          <div class="version-context">
+            <p>{{ store.activeVersion?.hypothesis || store.activeVersion?.rationale || "No hypothesis was recorded for this version." }}</p>
+            <span>{{ store.latestRun ? `Run ${store.latestRun.id.slice(0,8)} · ${store.latestRun.status}` : "No run for this version" }}</span>
+            <div><button type="button" @click="goToVersionContext('strategy', $event)">Exact rules</button><button v-if="store.variants.length" type="button" @click="goToVersionContext('variants', $event)">Compare with baseline</button></div>
+          </div>
         </div>
       </details>
     </div>
@@ -115,90 +114,35 @@ function formatDate(value?: string) {
 .verdict-header {
   position: relative;
   z-index: 45;
-  display: grid;
-  width: min(var(--workspace-shell), calc(100% - var(--workspace-gutter) - var(--workspace-gutter)));
-  min-height: 98px;
-  grid-template-columns: minmax(260px, 1fr) auto;
-  grid-template-rows: auto auto;
-  align-items: center;
-  gap: 7px clamp(24px, 3vw, 52px);
-  margin: 0 auto;
-  padding: 17px 0 16px;
-}
-
-.verdict-header__identity {
-  display: grid;
-  min-width: 0;
-  grid-template-columns: auto minmax(0, 1fr);
-  align-items: center;
-  gap: 16px;
-}
-
-.verdict-header__instrument {
   display: flex;
-  max-width: 330px;
+  width: min(var(--case-frame, var(--workspace-shell)), calc(100% - var(--workspace-gutter) * 2));
   align-items: center;
-  gap: 7px;
-  overflow: hidden;
-  white-space: nowrap;
+  justify-content: space-between;
+  gap: 28px;
+  margin: 0 auto;
+  padding: 26px 0 24px;
 }
-
-.verdict-header__instrument strong {
-  color: var(--text-primary);
-  font-size: 17px;
-  font-weight: 680;
-  letter-spacing: -.025em;
-}
-
-.verdict-header__instrument strong + strong::before {
-  margin-right: 7px;
-  color: var(--text-faint);
-  content: "/";
-  font-weight: 450;
-}
-
-.verdict-header__instrument span {
-  flex: 0 0 auto;
-  margin-left: 2px;
-  color: var(--text-muted);
-  font-size: 10px;
-}
-
+.verdict-header__identity { min-width: 0; }
 .verdict-header__case {
-  min-width: 0;
   margin: 0;
-  overflow: hidden;
-  color: var(--text-secondary);
-  font-size: 13px;
-  font-weight: 520;
-  letter-spacing: -.012em;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  color: var(--text-primary);
+  font-size: 23px;
+  font-weight: 600;
+  letter-spacing: -.03em;
+  line-height: 1.3;
+  overflow-wrap: anywhere;
 }
-
-.verdict-header__window {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
+.verdict-header__context {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px 20px;
+  margin: 9px 0 0;
   color: var(--text-muted);
   font-size: 11px;
-  white-space: nowrap;
-  grid-row: 2;
+  line-height: 1.5;
 }
-
-.verdict-header__window svg { color: var(--text-faint); }
-.verdict-header__range-separator { color: var(--text-faint); }
-
-.verdict-header__controls {
-  position: relative;
-  display: flex;
-  min-width: 0;
-  align-items: center;
-  justify-content: flex-end;
-  gap: 12px;
-  grid-row: 1 / span 2;
-  grid-column: 2;
-}
+.verdict-header__frequency { margin-left: 8px; color: var(--text-faint); }
+.verdict-header__controls { display: flex; flex-shrink: 0; align-items: center; gap: 12px; }
 
 .version-select-wrap {
   position: relative;
@@ -308,31 +252,19 @@ function formatDate(value?: string) {
 .verdict-header__facts { display: grid; gap: 9px; padding-top: 13px; }
 .verdict-header__facts span { display: inline-flex; align-items: center; gap: 8px; color: var(--text-muted); font-size: 10px; line-height: 1.4; }
 .verdict-header__facts svg { flex: 0 0 auto; color: var(--text-faint); }
+.version-context { margin-top:14px;padding-top:14px;border-top:1px solid var(--line-subtle);font-size:12px;line-height:1.6; }
+.version-context p { margin:0 0 8px;color:var(--text-secondary); }
+.version-context>span { color:var(--text-muted);font-size:11px; }
+.version-context>div { display:flex;gap:12px;flex-wrap:wrap;margin-top:12px; }
+.version-context button { padding:6px 9px;border:1px solid var(--line-control);border-radius:6px;color:var(--text-secondary);background:var(--surface-control);font:inherit;cursor:pointer; }
 .sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0,0,0,0); white-space: nowrap; }
 
-@media (max-width: 1080px) {
-  .verdict-header { grid-template-columns: minmax(240px, 1fr) auto; gap: 7px 28px; padding-block: 16px; }
-}
-
 @media (max-width: 760px) {
-  .verdict-header {
-    width: calc(100% - 32px);
-    grid-template-columns: 1fr;
-    gap: 12px;
-    padding: 15px 0;
-  }
-  .verdict-header__identity { grid-template-columns: 1fr; gap: 4px; }
-  .verdict-header__instrument { max-width: 100%; }
-  .verdict-header__case { font-size: 11px; }
-  .verdict-header__window { grid-row: auto; }
-  .verdict-header__controls { grid-row: auto; grid-column: auto; justify-content: flex-start; }
-  .version-select-wrap { width: min(196px, 48vw); }
-}
-
-@media (max-width: 480px) {
-  .verdict-header__controls { width: 100%; flex-wrap: wrap; }
-  .version-select-wrap { width: 100%; }
-  .case-inspector { margin-left: auto; }
-  .case-inspector__popover { right: -1px; }
+  .verdict-header { flex-direction: column; align-items: stretch; gap: 16px; padding-block: 20px; }
+  .verdict-header__case { font-size: 20px; }
+  .verdict-header__context { gap: 5px; flex-direction: column; font-size: 11px; }
+  .verdict-header__controls { justify-content: space-between; gap: 12px; }
+  .version-select-wrap { width: min(240px, 70%); }
+  .version-select :deep(.form-select__trigger), .case-inspector > summary { min-height: 40px; }
 }
 </style>

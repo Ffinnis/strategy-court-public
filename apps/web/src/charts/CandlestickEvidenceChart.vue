@@ -12,6 +12,7 @@ import {
 } from "lightweight-charts";
 import type { IChartApi, ISeriesApi, MouseEventParams, SeriesMarker, Time } from "lightweight-charts";
 import { ArrowDown, ArrowUp, CandlestickChart, CircleAlert } from "lucide-vue-next";
+import SegmentedControl from "@/components/ui/SegmentedControl.vue";
 import FormSelect from "@/components/forms/FormSelect.vue";
 import type { MarketEvidence, MarketEvidenceBar, Trade } from "@/types";
 import { buildMarketChartSeries, MARKET_TONES } from "@/charts/marketChartData";
@@ -46,6 +47,21 @@ const barByDate = computed(() => new Map(seriesData.value.bars.map((bar) => [bar
 const selectedTrades = computed(() => props.trades.filter((trade) => trade.symbol === selectedSymbol.value));
 const displayBar = computed(() => activeBar.value ?? seriesData.value.bars.at(-1) ?? null);
 const isReady = computed(() => !props.loading && !props.error && symbols.value.length > 0);
+const keyboardAnnouncement = ref("");
+const tradeAtBar = computed(() => displayBar.value ? selectedTrades.value.find(trade=>trade.id && trade.entryDate <= displayBar.value!.date && trade.exitDate >= displayBar.value!.date) : undefined);
+function inspectWithKeyboard(event:KeyboardEvent) {
+  if(!["ArrowLeft","ArrowRight","Home","End"].includes(event.key) || !seriesData.value.bars.length)return;
+  event.preventDefault();
+  const points=seriesData.value.bars;
+  const current=Math.max(0,points.findIndex(bar=>bar.date===displayBar.value?.date));
+  const index=event.key === "Home" ? 0 : event.key === "End" ? points.length-1 : Math.max(0,Math.min(points.length-1,current+(event.key === "ArrowRight" ? 1 : -1)));
+  const bar=points[index]!;activeBar.value=bar;
+  const range=chart?.timeScale().getVisibleLogicalRange();
+  if(range && (index<range.from || index>range.to)) { const span=Math.max(30,range.to-range.from);chart?.timeScale().setVisibleLogicalRange({from:Math.max(-1,index-span/2),to:index+span/2}); }
+  const series=viewMode.value === "candles" ? candleSeries : closeSeries;
+  if(chart && series)chart.setCrosshairPosition(bar.close,bar.date,series);
+  keyboardAnnouncement.value=`${selectedSymbol.value}, ${formatDate(bar.date)}. Open ${formatPrice(bar.open)}, high ${formatPrice(bar.high)}, low ${formatPrice(bar.low)}, close ${formatPrice(bar.close)}.`;
+}
 const adjusted = computed(() => seriesData.value.bars.some((bar) => bar.adjusted));
 const rangeLabel = computed(() => {
   const first = seriesData.value.bars[0]?.date;
@@ -113,7 +129,7 @@ function syncChart(refit = true): void {
   closeSeries.setData(data.closes);
   volumeSeries.setData(data.volume);
   updateMarkers(data.markers.map(marker => props.focus?.tradeId && String(marker.id).startsWith(`${props.focus.tradeId}-`)
-    ? { ...marker, color: "#d5b77b", size: 1.7 } : marker));
+    ? { ...marker, color: "#f1f1f1", size: 0.8 } : marker));
   if (refit) activeBar.value = data.bars.at(-1) ?? null;
   applyViewMode();
   requestAnimationFrame(() => {
@@ -260,7 +276,7 @@ onBeforeUnmount(destroyChart);
           <span class="chart-badge">Daily</span>
           <span v-if="adjusted" class="chart-badge">Adjusted</span>
         </div>
-        <div v-if="displayBar" class="quote-strip" aria-live="polite">
+        <div v-if="displayBar" class="quote-strip">
           <span class="quote-date">{{ formatDate(displayBar.date) }}</span>
           <span><i>O</i>{{ formatPrice(displayBar.open) }}</span>
           <span><i>H</i>{{ formatPrice(displayBar.high) }}</span>
@@ -282,10 +298,7 @@ onBeforeUnmount(destroyChart);
             aria-label="Symbol"
           />
         </div>
-        <div class="view-switch" role="group" aria-label="Chart type">
-          <button type="button" :aria-pressed="viewMode === 'candles'" @click="viewMode = 'candles'">Candles</button>
-          <button type="button" :aria-pressed="viewMode === 'line'" @click="viewMode = 'line'">Line</button>
-        </div>
+        <SegmentedControl :model-value="viewMode" label="Chart type" :options="[{value:'candles',label:'Candles'},{value:'line',label:'Line'}]" @update:model-value="viewMode=$event as 'candles' | 'line'" />
         <button class="range-button" type="button" @click="showRecent">1 year</button>
         <button class="range-button" type="button" @click="showAll">All</button>
       </div>
@@ -311,24 +324,30 @@ onBeforeUnmount(destroyChart);
         <div
           ref="chartContainer"
           class="chart-canvas"
-          role="img"
+          role="group"
           tabindex="0"
-          :aria-label="`${selectedSymbol} adjusted daily candlestick chart from ${rangeLabel}. Drag to pan and scroll to zoom. Recorded fills are listed below.`"
+          @keydown="inspectWithKeyboard"
+          :aria-label="`${selectedSymbol} adjusted daily candlestick chart from ${rangeLabel}. Drag to pan, scroll to zoom, or use arrow keys to inspect each bar. Recorded fills are listed below.`"
         />
       </div>
+      <p class="sr-only" role="status">{{ keyboardAnnouncement }}</p>
+      <div v-if="tradeAtBar?.id" class="chart-trade-link"><span>Recorded position on {{ displayBar?.date }}</span><button type="button" @click="emit('select-trade',tradeAtBar.id!)">Inspect {{ tradeAtBar.symbol }} trade <ArrowUp :size="12" /></button></div>
       <footer class="chart-footer">
         <div class="fill-key" aria-label="Fill markers">
           <span><ArrowUp :size="13" aria-hidden="true" />Entry</span>
           <span><ArrowDown :size="13" aria-hidden="true" />Exit</span>
         </div>
         <span>{{ rangeLabel }} · {{ seriesData.bars.length.toLocaleString() }} bars · {{ selectedTrades.length }} trades</span>
-        <span class="interaction-hint">Drag to pan · scroll to zoom · double-click to reset</span>
+        <span class="interaction-hint">Arrow keys to inspect · drag to pan · scroll to zoom</span>
       </footer>
     </template>
   </figure>
 </template>
 
 <style scoped lang="scss">
+.market-chart { container-type: inline-size; container-name: market-evidence; }
+.chart-trade-link{display:flex;align-items:center;justify-content:space-between;gap:14px;padding:12px 20px;border-top:1px solid #303030;color:#888;font-size:11px;}.chart-trade-link button{display:flex;align-items:center;gap:5px;padding:0;border:0;background:transparent;color:#ddd;font-size:11px;cursor:pointer;}
+
 .market-chart{position:relative;isolation:isolate;margin:0;overflow:visible;border:1px solid rgba(255,255,255,.13);border-radius:16px;background:#0d0d0d;box-shadow:inset 0 1px 0 rgba(255,255,255,.055),0 22px 64px rgba(0,0,0,.5)}
 .market-chart__header{display:flex;min-height:88px;align-items:center;justify-content:space-between;gap:28px;padding:16px 20px;border-bottom:1px solid rgba(255,255,255,.085);border-radius:15px 15px 0 0;background:#121212}.instrument{display:grid;min-width:0;gap:10px}.instrument__title{display:flex;align-items:center;gap:8px}.market-chart h2{margin:0;color:#f4f4f4;font-size:20px;font-weight:620;letter-spacing:-.035em}.chart-badge,.regime-badge{display:inline-flex;min-height:23px;align-items:center;padding:0 8px;border:1px solid #343434;border-radius:999px;color:#929292;background:#181818;font-size:9px;font-weight:550;white-space:nowrap}.regime-badge{color:#bbb}.quote-strip{display:flex;max-width:min(720px,60vw);align-items:center;gap:8px 14px;overflow-x:auto;color:#c7c7c7;font-size:10px;scrollbar-width:none}.quote-strip::-webkit-scrollbar{display:none}.quote-strip span{display:inline-flex;align-items:center;gap:5px;white-space:nowrap}.quote-strip i{color:#626262;font-style:normal}.quote-date{color:#777!important}
 .chart-toolbar{display:flex;align-items:center;gap:7px;white-space:nowrap}.symbol-control{flex:0 0 82px;width:82px}.symbol-select :deep(.form-select__trigger),.view-switch,.range-button{height:34px;min-height:34px;border:1px solid #303030;border-radius:9px;color:#b8b8b8;background:#171717;font:560 10px Inter,ui-sans-serif,system-ui,sans-serif;box-shadow:inset 0 1px rgba(255,255,255,.04),0 7px 18px rgba(0,0,0,.22)}.symbol-select :deep(.form-select__trigger){padding:0 9px 0 10px}.symbol-select :deep(.form-select__value){font-size:10px;font-weight:560}.symbol-select :deep(.form-select__listbox){right:0;left:auto;min-width:110px}.symbol-select :deep(.form-select__option){min-height:34px;font-size:11px}.view-switch{display:flex;overflow:hidden}.view-switch button,.range-button{border:0;color:#777;background:transparent;font:inherit;cursor:pointer}.view-switch button{padding:0 10px;border-right:1px solid #303030}.view-switch button:last-child{border-right:0}.view-switch button[aria-pressed="true"]{color:#111;background:#ededed}.range-button{padding:0 10px;border:1px solid #303030}.range-button:hover,.range-button:focus-visible,.symbol-select :deep(.form-select__trigger:hover:not(:disabled)){color:#eee;border-color:#555;background:#1b1b1b}.view-switch button:focus-visible,.range-button:focus-visible,.symbol-select :deep(.form-select__trigger:focus-visible){position:relative;z-index:1;outline:2px solid #fff;outline-offset:2px}
@@ -336,4 +355,10 @@ onBeforeUnmount(destroyChart);
 .chart-surface{position:relative;background:#0d0d0d}.chart-canvas{width:100%;height:520px;outline:0}.chart-canvas:focus-visible{box-shadow:inset 0 0 0 2px #e5e5e5}.chart-footer{display:grid;min-height:54px;grid-template-columns:auto 1fr auto;align-items:center;gap:20px;padding:0 20px;border-top:1px solid rgba(255,255,255,.085);border-radius:0 0 15px 15px;color:#707070;background:#111;font-size:9px}.fill-key{display:flex;align-items:center;gap:13px}.fill-key span{display:inline-flex;align-items:center;gap:5px;color:#929292}.fill-key span:first-child svg{color:#eee}.fill-key span:last-child svg{color:#888}.interaction-hint{text-align:right;white-space:nowrap}.sr-only{position:absolute;width:1px;height:1px;margin:-1px;overflow:hidden;padding:0;border:0;clip:rect(0,0,0,0);white-space:nowrap}
 @media(max-width:900px){.market-chart__header{align-items:flex-start;flex-direction:column}.quote-strip{max-width:calc(100vw - 84px)}.chart-toolbar{width:100%;flex-wrap:wrap;padding-bottom:2px}.chart-footer{grid-template-columns:1fr auto}.interaction-hint{display:none}}
 @media(max-width:620px){.market-chart{border-radius:16px}.market-chart__header{min-height:auto;padding:16px;border-radius:15px 15px 0 0}.chart-canvas{height:430px}.chart-state{min-height:430px}.chart-footer{grid-template-columns:1fr;gap:8px;padding:13px 16px;border-radius:0 0 15px 15px}.fill-key{order:2}.chart-footer>span{white-space:normal}}
+@container market-evidence (max-width: 850px) {
+  .market-chart__header { align-items:flex-start;flex-direction:column;gap:18px; }
+  .instrument { width:100%; }
+  .quote-strip { max-width:100%; }
+  .chart-toolbar { width:100%; }
+}
 </style>

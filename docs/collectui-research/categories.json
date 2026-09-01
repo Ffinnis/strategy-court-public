@@ -1,0 +1,622 @@
+[
+  {
+    "label": "UI Interaction",
+    "url": "https://collectui.com/designs/ui-interaction-ui-design-inspiration"
+  },
+  {
+    "label": "Landing Page",
+    "url": "https://collectui.com/designs/landing-page-ui-design-inspiration"
+  },
+  {
+    "label": "Framer",
+    "url": "https://collectui.com/designs/framer-ui-design-inspiration"
+  },
+  {
+    "label": "Button",
+    "url": "https://collectui.com/designs/button-ui-design-inspiration"
+  },
+  {
+    "label": "Navigation",
+    "url": "https://collectui.com/designs/navigation-ui-design-inspiration"
+  },
+  {
+    "label": "Hero Section",
+    "url": "https://collectui.com/designs/hero-section-ui-design-inspiration"
+  },
+  {
+    "label": "CTA",
+    "url": "https://collectui.com/designs/cta-ui-design-inspiration"
+  },
+  {
+    "label": "Footer",
+    "url": "https://collectui.com/designs/footer-ui-design-inspiration"
+  },
+  {
+    "label": "Claude",
+    "url": "https://collectui.com/designs/claude-ui-design-inspiration"
+  },
+  {
+    "label": "Sign Up",
+    "url": "https://collectui.com/designs/sign-up-ui-design-inspiration"
+  },
+  {
+    "label": "Dashboard",
+    "url": "https://collectui.com/designs/dashboard-ui-design-inspiration"
+  },
+  {
+    "label": "Todo List",
+    "url": "https://collectui.com/designs/todo-list-ui-design-inspiration"
+  },
+  {
+    "label": "Checkout",
+    "url": "https://collectui.com/designs/checkout-ui-design-inspiration"
+  },
+  {
+    "label": "404 Page",
+    "url": "https://collectui.com/designs/404-page-ui-design-inspiration"
+  },
+  {
+    "label": "Onboarding",
+    "url": "https://collectui.com/designs/onboarding-ui-design-inspiration"
+  },
+  {
+    "label": "Pop Up",
+    "url": "https://collectui.com/designs/pop-up-ui-design-inspiration"
+  },
+  {
+    "label": "Settings Page",
+    "url": "https://collectui.com/designs/settings-page-ui-design-inspiration"
+  },
+  {
+    "label": "User Profile",
+    "url": "https://collectui.com/designs/user-profile-ui-design-inspiration"
+  },
+  {
+    "label": "Features",
+    "url": "https://collectui.com/designs/features-ui-design-inspiration"
+  },
+  {
+    "label": "Pricing",
+    "url": "https://collectui.com/designs/pricing-ui-design-inspiration"
+  },
+  {
+    "label": "Hover State",
+    "url": "https://collectui.com/designs/hover-state-ui-design-inspiration"
+  },
+  {
+    "label": "Newsfeed",
+    "url": "https://collectui.com/designs/newsfeed-ui-design-inspiration"
+  },
+  {
+    "label": "Inbox",
+    "url": "https://collectui.com/designs/inbox-ui-design-inspiration"
+  },
+  {
+    "label": "Contact List",
+    "url": "https://collectui.com/designs/contact-list-ui-design-inspiration"
+  },
+  {
+    "label": "Redesign",
+    "url": "https://collectui.com/designs/redesign-ui-design-inspiration"
+  },
+  {
+    "label": "UI Kit",
+    "url": "https://collectui.com/designs/ui-kit-ui-design-inspiration"
+  },
+  {
+    "label": "Email Application",
+    "url": "https://collectui.com/designs/email-application-ui-design-inspiration"
+  },
+  {
+    "label": "Illustration",
+    "url": "https://collectui.com/designs/illustration-ui-design-inspiration"
+  },
+  {
+    "label": "Style Guide",
+    "url": "https://collectui.com/designs/style-guide-ui-design-inspiration"
+  },
+  {
+    "label": "Admin Panel",
+    "url": "https://collectui.com/designs/admin-panel-ui-design-inspiration"
+  },
+  {
+    "label": "E-Wallet",
+    "url": "https://collectui.com/designs/e-wallet-ui-design-inspiration"
+  },
+  {
+    "label": "Collect UI Curation",
+    "url": "https://collectui.com/designs/collect-ui-curation-ui-design-inspiration"
+  },
+  {
+    "label": "Funny Animation",
+    "url": "https://collectui.com/designs/funny-animation-ui-design-inspiration"
+  },
+  {
+    "label": "Project Management",
+    "url": "https://collectui.com/designs/project-management-ui-design-inspiration"
+  },
+  {
+    "label": "Character Animation",
+    "url": "https://collectui.com/designs/character-animation-ui-design-inspiration"
+  },
+  {
+    "label": "Stamp",
+    "url": "https://collectui.com/designs/stamp-ui-design-inspiration"
+  },
+  {
+    "label": "Code Editor",
+    "url": "https://collectui.com/designs/code-editor-ui-design-inspiration"
+  },
+  {
+    "label": "About Us",
+    "url": "https://collectui.com/designs/about-us-ui-design-inspiration"
+  },
+  {
+    "label": "Reminder / Alarm",
+    "url": "https://collectui.com/designs/reminder-alarm-ui-design-inspiration"
+  },
+  {
+    "label": "E-Commerce",
+    "url": "https://collectui.com/designs/e-commerce-ui-design-inspiration"
+  },
+  {
+    "label": "Gallery",
+    "url": "https://collectui.com/designs/gallery-ui-design-inspiration"
+  },
+  {
+    "label": "App Screens",
+    "url": "https://collectui.com/designs/app-screens-ui-design-inspiration"
+  },
+  {
+    "label": "Portfolio",
+    "url": "https://collectui.com/designs/portfolio-ui-design-inspiration"
+  },
+  {
+    "label": "Email Design",
+    "url": "https://collectui.com/designs/email-design-ui-design-inspiration"
+  },
+  {
+    "label": "Error State",
+    "url": "https://collectui.com/designs/error-state-ui-design-inspiration"
+  },
+  {
+    "label": "Scroll Transition",
+    "url": "https://collectui.com/designs/scroll-transition-ui-design-inspiration"
+  },
+  {
+    "label": "Comments",
+    "url": "https://collectui.com/designs/comments-ui-design-inspiration"
+  },
+  {
+    "label": "Book Cover",
+    "url": "https://collectui.com/designs/book-cover-ui-design-inspiration"
+  },
+  {
+    "label": "Business Card",
+    "url": "https://collectui.com/designs/business-card-ui-design-inspiration"
+  },
+  {
+    "label": "Documentation",
+    "url": "https://collectui.com/designs/documentation-ui-design-inspiration"
+  },
+  {
+    "label": "Infographic",
+    "url": "https://collectui.com/designs/infographic-ui-design-inspiration"
+  },
+  {
+    "label": "Statistics",
+    "url": "https://collectui.com/designs/statistics-ui-design-inspiration"
+  },
+  {
+    "label": "Menu",
+    "url": "https://collectui.com/designs/menu-ui-design-inspiration"
+  },
+  {
+    "label": "Captcha",
+    "url": "https://collectui.com/designs/captcha-ui-design-inspiration"
+  },
+  {
+    "label": "Orb",
+    "url": "https://collectui.com/designs/orb-ui-design-inspiration"
+  },
+  {
+    "label": "Icons",
+    "url": "https://collectui.com/designs/icons-ui-design-inspiration"
+  },
+  {
+    "label": "Tabs",
+    "url": "https://collectui.com/designs/tabs-ui-design-inspiration"
+  },
+  {
+    "label": "Invoice",
+    "url": "https://collectui.com/designs/invoice-ui-design-inspiration"
+  },
+  {
+    "label": "Grid",
+    "url": "https://collectui.com/designs/grid-ui-design-inspiration"
+  },
+  {
+    "label": "Testimonials",
+    "url": "https://collectui.com/designs/testimonials-ui-design-inspiration"
+  },
+  {
+    "label": "App Icon",
+    "url": "https://collectui.com/designs/app-icon-ui-design-inspiration"
+  },
+  {
+    "label": "Loading",
+    "url": "https://collectui.com/designs/loading-ui-design-inspiration"
+  },
+  {
+    "label": "Sidebar",
+    "url": "https://collectui.com/designs/sidebar-ui-design-inspiration"
+  },
+  {
+    "label": "Liquid Glass",
+    "url": "https://collectui.com/designs/liquid-glass-ui-design-inspiration"
+  },
+  {
+    "label": "Motion",
+    "url": "https://collectui.com/designs/motion-ui-design-inspiration"
+  },
+  {
+    "label": "CSS",
+    "url": "https://collectui.com/designs/css-ui-design-inspiration"
+  },
+  {
+    "label": "AI Flow",
+    "url": "https://collectui.com/designs/ai-flow-ui-design-inspiration"
+  },
+  {
+    "label": "Card",
+    "url": "https://collectui.com/designs/card-ui-design-inspiration"
+  },
+  {
+    "label": "Dark Mode",
+    "url": "https://collectui.com/designs/dark-mode-ui-design-inspiration"
+  },
+  {
+    "label": "Modal",
+    "url": "https://collectui.com/designs/modal-ui-design-inspiration"
+  },
+  {
+    "label": "Scroll Animation",
+    "url": "https://collectui.com/designs/scroll-animation-ui-design-inspiration"
+  },
+  {
+    "label": "Webflow",
+    "url": "https://collectui.com/designs/webflow-ui-design-inspiration"
+  },
+  {
+    "label": "3D",
+    "url": "https://collectui.com/designs/3d-ui-design-inspiration"
+  },
+  {
+    "label": "Notification",
+    "url": "https://collectui.com/designs/notification-ui-design-inspiration"
+  },
+  {
+    "label": "Bento",
+    "url": "https://collectui.com/designs/bento-ui-design-inspiration"
+  },
+  {
+    "label": "Landing Section",
+    "url": "https://collectui.com/designs/landing-section-ui-design-inspiration"
+  },
+  {
+    "label": "Mobile App",
+    "url": "https://collectui.com/designs/mobile-app-ui-design-inspiration"
+  },
+  {
+    "label": "Chat Layout",
+    "url": "https://collectui.com/designs/chat-layout-ui-design-inspiration"
+  },
+  {
+    "label": "Calendar",
+    "url": "https://collectui.com/designs/calendar-ui-design-inspiration"
+  },
+  {
+    "label": "Text Effect",
+    "url": "https://collectui.com/designs/text-effect-ui-design-inspiration"
+  },
+  {
+    "label": "Responsive",
+    "url": "https://collectui.com/designs/responsive-ui-design-inspiration"
+  },
+  {
+    "label": "Color Palette",
+    "url": "https://collectui.com/designs/color-palette-ui-design-inspiration"
+  },
+  {
+    "label": "Dropdown",
+    "url": "https://collectui.com/designs/dropdown-ui-design-inspiration"
+  },
+  {
+    "label": "Tags",
+    "url": "https://collectui.com/designs/tags-ui-design-inspiration"
+  },
+  {
+    "label": "Loading Animation",
+    "url": "https://collectui.com/designs/loading-animation-ui-design-inspiration"
+  },
+  {
+    "label": "Switch Button",
+    "url": "https://collectui.com/designs/switch-button-ui-design-inspiration"
+  },
+  {
+    "label": "Image Slider",
+    "url": "https://collectui.com/designs/image-slider-ui-design-inspiration"
+  },
+  {
+    "label": "Subscribe",
+    "url": "https://collectui.com/designs/subscribe-ui-design-inspiration"
+  },
+  {
+    "label": "Widget",
+    "url": "https://collectui.com/designs/widget-ui-design-inspiration"
+  },
+  {
+    "label": "Mac App",
+    "url": "https://collectui.com/designs/mac-app-ui-design-inspiration"
+  },
+  {
+    "label": "FAQ",
+    "url": "https://collectui.com/designs/faq-ui-design-inspiration"
+  },
+  {
+    "label": "Search",
+    "url": "https://collectui.com/designs/search-ui-design-inspiration"
+  },
+  {
+    "label": "Social Media",
+    "url": "https://collectui.com/designs/social-media-ui-design-inspiration"
+  },
+  {
+    "label": "Shader",
+    "url": "https://collectui.com/designs/shader-ui-design-inspiration"
+  },
+  {
+    "label": "File Tree",
+    "url": "https://collectui.com/designs/file-tree-ui-design-inspiration"
+  },
+  {
+    "label": "Terminal Aesthetic",
+    "url": "https://collectui.com/designs/terminal-aesthetic-ui-design-inspiration"
+  },
+  {
+    "label": "File Upload",
+    "url": "https://collectui.com/designs/file-upload-ui-design-inspiration"
+  },
+  {
+    "label": "Invite",
+    "url": "https://collectui.com/designs/invite-ui-design-inspiration"
+  },
+  {
+    "label": "Tooltip / Popover",
+    "url": "https://collectui.com/designs/tooltip-popover-ui-design-inspiration"
+  },
+  {
+    "label": "WebGL",
+    "url": "https://collectui.com/designs/webgl-ui-design-inspiration"
+  },
+  {
+    "label": "AI",
+    "url": "https://collectui.com/designs/ai-ui-design-inspiration"
+  },
+  {
+    "label": "Notepad",
+    "url": "https://collectui.com/designs/notepad-ui-design-inspiration"
+  },
+  {
+    "label": "Accordion",
+    "url": "https://collectui.com/designs/accordion-ui-design-inspiration"
+  },
+  {
+    "label": "Folder",
+    "url": "https://collectui.com/designs/folder-ui-design-inspiration"
+  },
+  {
+    "label": "Badge",
+    "url": "https://collectui.com/designs/badge-ui-design-inspiration"
+  },
+  {
+    "label": "Command Bar",
+    "url": "https://collectui.com/designs/command-bar-ui-design-inspiration"
+  },
+  {
+    "label": "Progress",
+    "url": "https://collectui.com/designs/progress-ui-design-inspiration"
+  },
+  {
+    "label": "Pattern",
+    "url": "https://collectui.com/designs/pattern-ui-design-inspiration"
+  },
+  {
+    "label": "Blog",
+    "url": "https://collectui.com/designs/blog-ui-design-inspiration"
+  },
+  {
+    "label": "Table",
+    "url": "https://collectui.com/designs/table-ui-design-inspiration"
+  },
+  {
+    "label": "Dynamic Island",
+    "url": "https://collectui.com/designs/dynamic-island-ui-design-inspiration"
+  },
+  {
+    "label": "Music Player",
+    "url": "https://collectui.com/designs/music-player-ui-design-inspiration"
+  },
+  {
+    "label": "Single Product",
+    "url": "https://collectui.com/designs/single-product-ui-design-inspiration"
+  },
+  {
+    "label": "Countdown Timer",
+    "url": "https://collectui.com/designs/countdown-timer-ui-design-inspiration"
+  },
+  {
+    "label": "Analytics Chart",
+    "url": "https://collectui.com/designs/analytics-chart-ui-design-inspiration"
+  },
+  {
+    "label": "Map",
+    "url": "https://collectui.com/designs/map-ui-design-inspiration"
+  },
+  {
+    "label": "Workout Tracker",
+    "url": "https://collectui.com/designs/workout-tracker-ui-design-inspiration"
+  },
+  {
+    "label": "Info Card",
+    "url": "https://collectui.com/designs/info-card-ui-design-inspiration"
+  },
+  {
+    "label": "Coming Soon",
+    "url": "https://collectui.com/designs/coming-soon-ui-design-inspiration"
+  },
+  {
+    "label": "Job Listing",
+    "url": "https://collectui.com/designs/job-listing-ui-design-inspiration"
+  },
+  {
+    "label": "Header Navigation",
+    "url": "https://collectui.com/designs/header-navigation-ui-design-inspiration"
+  },
+  {
+    "label": "Background Pattern",
+    "url": "https://collectui.com/designs/background-pattern-ui-design-inspiration"
+  },
+  {
+    "label": "Flight Search",
+    "url": "https://collectui.com/designs/flight-search-ui-design-inspiration"
+  },
+  {
+    "label": "Event Listing",
+    "url": "https://collectui.com/designs/event-listing-ui-design-inspiration"
+  },
+  {
+    "label": "Schedule",
+    "url": "https://collectui.com/designs/schedule-ui-design-inspiration"
+  },
+  {
+    "label": "Notes Widget",
+    "url": "https://collectui.com/designs/notes-widget-ui-design-inspiration"
+  },
+  {
+    "label": "Date Picker",
+    "url": "https://collectui.com/designs/date-picker-ui-design-inspiration"
+  },
+  {
+    "label": "Form",
+    "url": "https://collectui.com/designs/form-ui-design-inspiration"
+  },
+  {
+    "label": "Progress Bar",
+    "url": "https://collectui.com/designs/progress-bar-ui-design-inspiration"
+  },
+  {
+    "label": "Pagination",
+    "url": "https://collectui.com/designs/pagination-ui-design-inspiration"
+  },
+  {
+    "label": "Product Tour",
+    "url": "https://collectui.com/designs/product-tour-ui-design-inspiration"
+  },
+  {
+    "label": "Mobile Menu",
+    "url": "https://collectui.com/designs/mobile-menu-ui-design-inspiration"
+  },
+  {
+    "label": "Avatar",
+    "url": "https://collectui.com/designs/avatar-ui-design-inspiration"
+  },
+  {
+    "label": "Status Update",
+    "url": "https://collectui.com/designs/status-update-ui-design-inspiration"
+  },
+  {
+    "label": "Splash Screen",
+    "url": "https://collectui.com/designs/splash-screen-ui-design-inspiration"
+  },
+  {
+    "label": "Text Editor",
+    "url": "https://collectui.com/designs/text-editor-ui-design-inspiration"
+  },
+  {
+    "label": "List Items",
+    "url": "https://collectui.com/designs/list-items-ui-design-inspiration"
+  },
+  {
+    "label": "Web Animation",
+    "url": "https://collectui.com/designs/web-animation-ui-design-inspiration"
+  },
+  {
+    "label": "AI Agents",
+    "url": "https://collectui.com/designs/ai-agents-ui-design-inspiration"
+  },
+  {
+    "label": "Creative Tools",
+    "url": "https://collectui.com/designs/creative-tools-ui-design-inspiration"
+  },
+  {
+    "label": "Color Picker",
+    "url": "https://collectui.com/designs/color-picker-ui-design-inspiration"
+  },
+  {
+    "label": "Poster",
+    "url": "https://collectui.com/designs/poster-ui-design-inspiration"
+  },
+  {
+    "label": "Crypto",
+    "url": "https://collectui.com/designs/crypto-ui-design-inspiration"
+  },
+  {
+    "label": "Typography",
+    "url": "https://collectui.com/designs/typography-ui-design-inspiration"
+  },
+  {
+    "label": "Logo",
+    "url": "https://collectui.com/designs/logo-ui-design-inspiration"
+  },
+  {
+    "label": "Range Slider",
+    "url": "https://collectui.com/designs/range-slider-ui-design-inspiration"
+  },
+  {
+    "label": "OTP Code",
+    "url": "https://collectui.com/designs/otp-code-ui-design-inspiration"
+  },
+  {
+    "label": "Liquid Metal",
+    "url": "https://collectui.com/designs/liquid-metal-ui-design-inspiration"
+  },
+  {
+    "label": "Activity Feed",
+    "url": "https://collectui.com/designs/activity-feed-ui-design-inspiration"
+  },
+  {
+    "label": "UI Tips",
+    "url": "https://collectui.com/designs/ui-tips-ui-design-inspiration"
+  },
+  {
+    "label": "Animation",
+    "url": "https://collectui.com/designs/animation-ui-design-inspiration"
+  },
+  {
+    "label": "Empty States",
+    "url": "https://collectui.com/designs/empty-states-ui-design-inspiration"
+  },
+  {
+    "label": "Wireframe",
+    "url": "https://collectui.com/designs/wireframe-ui-design-inspiration"
+  },
+  {
+    "label": "Branding",
+    "url": "https://collectui.com/designs/branding-ui-design-inspiration"
+  },
+  {
+    "label": "Filter Products",
+    "url": "https://collectui.com/designs/filter-products-ui-design-inspiration"
+  }
+]

@@ -2,7 +2,9 @@
 import { computed, nextTick, reactive, ref } from "vue";
 import { useRouter } from "vue-router";
 import { ArrowLeft, ArrowRight, Check, ChevronDown, Plus } from "lucide-vue-next";
+import { useIntakeDraft } from "@/composables/useIntakeDraft";
 import FormChip from "@/components/forms/FormChip.vue";
+import FormDateRange from "@/components/forms/FormDateRange.vue";
 import FormDatePicker from "@/components/forms/FormDatePicker.vue";
 import FormSelect from "@/components/forms/FormSelect.vue";
 import { formatCalendarDate, moveCalendarDay, moveCalendarMonth, parseCalendarDate } from "@/components/forms/calendar";
@@ -41,6 +43,8 @@ const form = reactive<CaseInput>({
   startDate: "2020-01-02", endDate: "2024-12-31",
   initialCapital: 10000, commissionBpsPerSide: 0, slippageBpsPerSide: 5,
 });
+
+const { draftStatus, clearDraft } = useIntakeDraft(form,step);
 
 const errors = computed(() => validateCaseIntake(form, maximumDate));
 const availableSymbolOptions = computed(() => symbols
@@ -105,8 +109,11 @@ async function goToStep(nextStep: IntakeStep) {
   submitError.value = "";
   step.value = nextStep;
   await nextTick();
-  stepHeading.value?.focus({ preventScroll: true });
   window.scrollTo({ top: 0, behavior: "auto" });
+}
+
+function focusStepHeading() {
+  stepHeading.value?.focus({ preventScroll: true });
 }
 
 async function next() {
@@ -141,6 +148,7 @@ async function submit() {
         return;
       }
       createdCaseId.value = id;
+      clearDraft(true);
     }
     await router.push("/case/" + createdCaseId.value);
   } catch {
@@ -157,6 +165,7 @@ async function submit() {
   <div class="intake-page">
     <aside class="intake-progress">
       <p class="intake-title">New strategy</p>
+      <div class="intake-draft-status"><p role="status">{{ draftStatus }}</p><button type="button" :disabled="submitting" @click="clearDraft()">Clear saved draft</button></div>
       <nav class="stepper" aria-label="Strategy creation progress">
         <ol>
           <li v-for="item in steps" :key="item.number">
@@ -180,6 +189,7 @@ async function submit() {
 
     <form class="wizard" novalidate :aria-busy="submitting" @submit.prevent="submit">
       <fieldset class="wizard-fields" :disabled="submitting || Boolean(createdCaseId)" aria-labelledby="intake-heading">
+        <Transition name="wizard-step" mode="out-in" @after-enter="focusStepHeading">
         <section v-if="step === 1" class="wizard-step">
           <header class="step-heading">
             <h1 id="intake-heading" ref="stepHeading" tabindex="-1">Describe your strategy</h1>
@@ -272,6 +282,7 @@ async function submit() {
                 <p v-if="fieldError('endDate')" id="end-error" class="field-error" role="alert">{{ fieldError('endDate') }}</p>
               </div>
             </div>
+            <FormDateRange :start="form.startDate" :end="form.endDate" :max="maximumDate" @apply="(start,end) => { form.startDate = start; form.endDate = end; }" />
             <p class="field-hint">Daily bars. Year presets end on your selected "To" date.</p>
           </fieldset>
         </section>
@@ -325,6 +336,7 @@ async function submit() {
           </fieldset>
           <p class="review-note">Creating a case does not run a test. You'll review and confirm the exact trading rules next.</p>
         </section>
+        </Transition>
       </fieldset>
 
       <footer class="wizard-actions">
@@ -340,6 +352,8 @@ async function submit() {
 </template>
 
 <style scoped lang="scss">
+.intake-draft-status{margin:0 0 24px;max-width:220px;}.intake-draft-status p{margin:0 0 8px;color:#939399;font-size:11px;line-height:1.6;}.intake-draft-status button{padding:0;border:0;border-bottom:1px solid #4a4a4a;background:transparent;color:#aaa;font-size:10px;cursor:pointer;}.exact-date-inputs{margin-top:16px;color:#929299;font-size:11px;}.exact-date-inputs summary{cursor:pointer;}.exact-date-inputs>div{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-top:15px;}.exact-date-inputs label{display:grid;gap:8px;}
+
 .intake-page {
   display: grid;
   grid-template-columns: 200px minmax(0, 1fr);
@@ -356,11 +370,11 @@ async function submit() {
 .stepper ol::before { position: absolute; top: 15px; bottom: 23px; left: 11px; width: 1px; background: #282828; content: ""; }
 .stepper button { position: relative; display: flex; width: 100%; min-height: 44px; align-items: flex-start; gap: 13px; padding: 0; border: 0; color: #818181; background: transparent; text-align: left; cursor: pointer; }
 .stepper button:disabled { cursor: default; }
-.step-number { display: grid; width: 24px; height: 24px; flex: 0 0 24px; place-items: center; border: 1px solid #353535; border-radius: 50%; color: #858585; background: #080808; font-size: 11px; line-height: 1; }
+.step-number { display: grid; width: 24px; height: 24px; flex: 0 0 24px; place-items: center; border: 1px solid #353535; border-radius: 50%; color: #858585; background: #080808; font-size: 11px; line-height: 1; transition:color var(--duration-control),border-color var(--duration-control),background var(--duration-control),transform var(--duration-control) var(--ease-out); }
 .step-label { display: grid; gap: 6px; padding-top: 3px; }
 .step-label strong { font-size: 13px; font-weight: 550; }
 .step-label small { color: #707070; font-size: 11px; line-height: 1.4; }
-.stepper .active .step-number { border-color: #e5e5e5; color: #101010; background: #ededed; }
+.stepper .active .step-number { border-color: #e5e5e5; color: #101010; background: #ededed; transform:scale(1.06); }
 .stepper .active strong { color: #f1f1f1; }
 .stepper .active small { color: #939393; }
 .stepper .complete { color: #b5b5b5; }

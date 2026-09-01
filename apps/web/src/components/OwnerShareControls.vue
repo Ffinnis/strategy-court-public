@@ -10,6 +10,9 @@ interface ShareState {
   revokedAt?: string;
 }
 
+import { useNotifications } from "@/stores/notifications";
+const notifications = useNotifications();
+
 const props = defineProps<{
   entityType: "report" | "indicator";
   entityId: string;
@@ -80,6 +83,7 @@ async function copyLink(): Promise<void> {
   try {
     await navigator.clipboard.writeText(publicUrl.value);
     copied.value = true;
+    notifications.push("Share link copied.");
     window.setTimeout(() => { copied.value = false; }, 1800);
   } catch {
     error.value = "Copy is unavailable in this browser. Select the URL and copy it manually.";

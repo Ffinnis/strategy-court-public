@@ -135,6 +135,7 @@ export interface CourtResult {
   rawMetrics?: Record<string, unknown>;
   outOfSampleMetrics?: Record<string, unknown>;
   stressedCostMetrics?: Record<string, unknown>;
+  splitDate?: string;
   parameterTrials: Array<Record<string, unknown>>;
   dataWarnings: string[];
   marketEvidence: MarketEvidence;
@@ -161,6 +162,10 @@ export interface CourtRun {
 }
 
 export interface AuditEvent {
+  entityType?: string;
+  entityId?: string;
+  before?: unknown;
+  after?: unknown;
   id: string;
   actor: "user" | "agent" | "system";
   action: string;

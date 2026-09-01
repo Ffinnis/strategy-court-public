@@ -2,14 +2,18 @@
 import { computed, ref, watch } from "vue";
 import { RouterView, useRoute, useRouter } from "vue-router";
 import { ShieldCheck } from "lucide-vue-next";
+import ToastStack from "@/components/ui/ToastStack.vue";
+import { useNotifications } from "@/stores/notifications";
 import AppHeader from "@/components/AppHeader.vue";
 import { useWebMcp } from "@/webmcp/useWebMcp";
 import { authClient } from "@/services/auth";
 
+const notifications = useNotifications();
 const route = useRoute();
 const router = useRouter();
 const sessionState = authClient.useSession();
 const currentUser = computed(() => sessionState.value.data?.user ?? null);
+watch(() => currentUser.value?.id, () => notifications.clear());
 const webMcpEnabled = computed(() => Boolean(currentUser.value));
 const isAuthPage = computed(() => route.name === "auth");
 const signingOut = ref(false);
@@ -54,8 +58,13 @@ async function signOut() {
       @sign-out="signOut"
     />
 
+    <ToastStack />
     <main id="main-content" tabindex="-1">
-      <RouterView />
+      <RouterView v-slot="{ Component, route: viewRoute }">
+        <Transition name="route-view" mode="out-in">
+          <component :is="Component" :key="String(viewRoute.name ?? viewRoute.path)" />
+        </Transition>
+      </RouterView>
     </main>
 
     <footer v-if="!isAuthPage" class="limitation-bar">

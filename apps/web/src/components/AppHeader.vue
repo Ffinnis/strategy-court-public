@@ -3,6 +3,8 @@ import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue"
 import { RouterLink, useRoute } from "vue-router";
 import { ArrowLeft, ArrowUpRight, ChevronDown, LogOut, Menu, X } from "lucide-vue-next";
 
+import CreateMenu from "@/components/ui/CreateMenu.vue";
+
 const props = defineProps<{
   user: { id: string; name?: string | null; email: string } | null;
   pending: boolean;
@@ -104,9 +106,7 @@ onBeforeUnmount(() => {
           <span>Back to overview</span>
         </RouterLink>
         <template v-else>
-          <RouterLink v-if="showCreate" class="header-create header-create--desktop" to="/new">
-            New strategy <ArrowUpRight :size="15" aria-hidden="true" />
-          </RouterLink>
+          <CreateMenu v-if="showCreate" class="header-create--desktop" />
           <span v-if="pending" class="account-loading" role="status" aria-label="Checking account" />
           <div v-else-if="user" class="header-account">
             <button
@@ -121,17 +121,19 @@ onBeforeUnmount(() => {
               <span class="account-avatar" aria-hidden="true">{{ initials }}</span>
               <ChevronDown class="account-chevron" :size="13" aria-hidden="true" />
             </button>
-            <div v-if="openDisclosure === 'account'" id="header-account-panel" ref="accountPanel" class="account-popover">
-              <div class="account-identity">
-                <strong>{{ user.name || "Strategy Court account" }}</strong>
-                <span>{{ user.email }}</span>
+            <Transition name="header-popover">
+              <div v-if="openDisclosure === 'account'" id="header-account-panel" ref="accountPanel" class="account-popover">
+                <div class="account-identity">
+                  <strong>{{ user.name || "Strategy Court account" }}</strong>
+                  <span>{{ user.email }}</span>
+                </div>
+                <button class="account-sign-out" type="button" :disabled="signingOut" :aria-busy="signingOut" @click="emit('signOut')">
+                  <LogOut :size="16" aria-hidden="true" />
+                  {{ signingOut ? "Signing out…" : "Sign out" }}
+                </button>
+                <p v-if="signOutError" class="account-error" role="alert">{{ signOutError }} Try again.</p>
               </div>
-              <button class="account-sign-out" type="button" :disabled="signingOut" :aria-busy="signingOut" @click="emit('signOut')">
-                <LogOut :size="16" aria-hidden="true" />
-                {{ signingOut ? "Signing out…" : "Sign out" }}
-              </button>
-              <p v-if="signOutError" class="account-error" role="alert">{{ signOutError }} Try again.</p>
-            </div>
+            </Transition>
           </div>
           <RouterLink v-else class="header-sign-in" :to="{ name: 'auth' }">Sign in</RouterLink>
           <button
@@ -143,26 +145,30 @@ onBeforeUnmount(() => {
             aria-controls="header-navigation-panel"
             @click="toggleDisclosure('navigation')"
           >
-            <X v-if="openDisclosure === 'navigation'" :size="20" aria-hidden="true" />
-            <Menu v-else :size="20" aria-hidden="true" />
+            <Transition name="navigation-icon" mode="out-in">
+              <X v-if="openDisclosure === 'navigation'" key="close" :size="20" aria-hidden="true" />
+              <Menu v-else key="open" :size="20" aria-hidden="true" />
+            </Transition>
           </button>
         </template>
       </div>
     </div>
 
-    <nav v-if="!isAuthPage && openDisclosure === 'navigation'" id="header-navigation-panel" ref="navigationPanel" class="mobile-navigation" aria-label="Mobile navigation">
-      <div class="mobile-navigation__links" @click="closeDisclosures">
-        <template v-if="isLandingPage">
-          <a href="#tests">The tests <ArrowUpRight :size="16" aria-hidden="true" /></a>
-          <a href="#process">How it works <ArrowUpRight :size="16" aria-hidden="true" /></a>
-        </template>
-        <RouterLink v-else to="/">Overview <ArrowUpRight :size="16" aria-hidden="true" /></RouterLink>
-        <RouterLink to="/indicators" :aria-current="route.name === 'indicators' ? 'page' : undefined">Indicators <ArrowUpRight :size="16" aria-hidden="true" /></RouterLink>
-      </div>
-      <RouterLink v-if="showCreate" class="header-create" to="/new" @click="closeDisclosures">
-        New strategy <ArrowUpRight :size="15" aria-hidden="true" />
-      </RouterLink>
-    </nav>
+    <Transition name="mobile-menu">
+      <nav v-if="!isAuthPage && openDisclosure === 'navigation'" id="header-navigation-panel" ref="navigationPanel" class="mobile-navigation" aria-label="Mobile navigation">
+        <div class="mobile-navigation__links" @click="closeDisclosures">
+          <template v-if="isLandingPage">
+            <a href="#tests">The tests <ArrowUpRight :size="16" aria-hidden="true" /></a>
+            <a href="#process">How it works <ArrowUpRight :size="16" aria-hidden="true" /></a>
+          </template>
+          <RouterLink v-else to="/">Overview <ArrowUpRight :size="16" aria-hidden="true" /></RouterLink>
+          <RouterLink to="/indicators" :aria-current="route.name === 'indicators' ? 'page' : undefined">Indicators <ArrowUpRight :size="16" aria-hidden="true" /></RouterLink>
+        </div>
+        <RouterLink v-if="showCreate" class="header-create" to="/new" @click="closeDisclosures">
+          New strategy <ArrowUpRight :size="15" aria-hidden="true" />
+        </RouterLink>
+      </nav>
+    </Transition>
   </header>
 </template>
 
@@ -232,9 +238,16 @@ onBeforeUnmount(() => {
 .header-account { position: relative; }
 .account-trigger { display: inline-flex; min-width: 44px; min-height: 44px; align-items: center; justify-content: center; gap: 7px; padding: 0; border: 0; border-radius: 7px; color: #8e8e8e; background: transparent; cursor: pointer; }
 .account-trigger:hover, .account-trigger[aria-expanded="true"] { color: #ededed; }
+.account-chevron { transition: transform var(--duration-control) var(--ease-out); }
+.account-trigger[aria-expanded="true"] .account-chevron { transform: rotate(180deg); }
 .account-avatar { display: grid; width: 32px; height: 32px; place-items: center; border: 1px solid #343434; border-radius: 50%; color: #d8d8d8; background: #191919; font-size: 11px; font-weight: 550; }
 .account-loading { display: block; width: 32px; height: 32px; border: 1px solid #282828; border-radius: 50%; background: #151515; }
 .account-popover { position: absolute; z-index: 1; top: calc(100% + 9px); right: 0; width: min(290px, calc(100vw - 32px)); padding: 8px; border: 1px solid #303030; border-radius: 11px; background: #141414; box-shadow: 0 20px 60px rgba(0,0,0,.6); }
+.header-popover-enter-active,.header-popover-leave-active{transform-origin:top right;transition:opacity 130ms ease,transform var(--duration-control) var(--ease-out)}
+.header-popover-enter-from,.header-popover-leave-to{opacity:0;transform:translateY(-6px) scale(.985)}
+.navigation-icon-enter-active,.navigation-icon-leave-active{transition:opacity 90ms ease,transform 120ms var(--ease-out)}
+.navigation-icon-enter-from{opacity:0;transform:rotate(-35deg) scale(.8)}
+.navigation-icon-leave-to{opacity:0;transform:rotate(35deg) scale(.8)}
 .account-identity { display: grid; gap: 5px; padding: 13px 12px 16px; border-bottom: 1px solid var(--line-subtle); }
 .account-identity strong { color: #eeeeef; font-size: 14px; font-weight: 550; overflow-wrap: anywhere; }
 .account-identity span { color: #969699; font-size: 12px; overflow-wrap: anywhere; }
@@ -245,6 +258,8 @@ onBeforeUnmount(() => {
 .navigation-trigger { display: none; width: 40px; height: 44px; align-items: center; justify-content: center; padding: 0; border: 0; border-radius: 6px; color: #c8c8c8; background: transparent; cursor: pointer; }
 .navigation-trigger:hover, .navigation-trigger[aria-expanded="true"] { color: #fff; background: #181818; }
 .mobile-navigation { display: none; }
+.mobile-menu-enter-active,.mobile-menu-leave-active{transform-origin:top center;transition:opacity 150ms ease,transform 220ms var(--ease-out),clip-path 220ms var(--ease-out)}
+.mobile-menu-enter-from,.mobile-menu-leave-to{opacity:0;transform:translateY(-7px);clip-path:inset(0 0 100% 0)}
 
 @media (max-width: 1100px) {
   .app-header__inner { gap: 28px; }

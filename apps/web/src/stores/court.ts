@@ -191,6 +191,7 @@ function normalizeCourtResult(value: unknown, run: RunPayload): CourtResult | un
     rawMetrics: metricsObject,
     outOfSampleMetrics: record(outOfSample.metrics),
     stressedCostMetrics: record(stressedCosts.metrics),
+    splitDate: typeof raw.splitDate === "string" ? raw.splitDate : undefined,
     parameterTrials: (Array.isArray(raw.parameterTrials) ? raw.parameterTrials : []).map(record),
     dataWarnings: (Array.isArray(raw.dataWarnings) ? raw.dataWarnings : []).map(String),
     marketEvidence: normalizeMarketEvidence(raw.marketEvidence ?? baseline.marketEvidence),
@@ -355,7 +356,7 @@ export function normalizeCase(value: unknown, fallback?: CaseInput): CourtCase {
   const versions = (Array.isArray(raw.versions) ? raw.versions : []).map(normalizeVersion);
   const audits = (Array.isArray(raw.audit) ? raw.audit : []).map((value, index) => {
     const item = record(value);
-    return { id: String(item.id ?? `audit-${index + 1}`), actor: (item.actor === "agent" || item.actor === "system" ? item.actor : "user") as AuditEvent["actor"], action: humanize(item.action), detail: String(item.detail ?? `Recorded ${humanize(item.entityType ?? "case")} change.`), createdAt: String(item.createdAt ?? "") };
+    return { entityType: typeof item.entityType === "string" ? item.entityType : undefined, entityId: typeof item.entityId === "string" ? item.entityId : undefined, before: item.before, after: item.after, id: String(item.id ?? `audit-${index + 1}`), actor: (item.actor === "agent" || item.actor === "system" ? item.actor : "user") as AuditEvent["actor"], action: humanize(item.action), detail: String(item.detail ?? `Recorded ${humanize(item.entityType ?? "case")} change.`), createdAt: String(item.createdAt ?? "") };
   });
   return {
     id: String(raw.id ?? ""), name: String(raw.name ?? fallback?.name ?? "Untitled Court case"), description: String(raw.description ?? fallback?.description ?? ""),

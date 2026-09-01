@@ -1,7 +1,14 @@
 <script setup lang="ts">
-import { computed, defineAsyncComponent, nextTick, onBeforeUnmount, ref, watch } from "vue";
+import { computed, defineAsyncComponent, nextTick, onActivated, onDeactivated, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { ArrowRight, ChevronRight, CircleAlert, Database, ExternalLink, Filter, Search, X } from "lucide-vue-next";
 import { useCourtStore } from "@/stores/court";
+import EvidenceInspectorNavigation from "@/components/EvidenceInspectorNavigation.vue";
+import InvestigationChecklist from "@/components/InvestigationChecklist.vue";
+import SegmentedControl from "@/components/ui/SegmentedControl.vue";
+import RevealPanel from "@/components/ui/RevealPanel.vue";
+import { evidenceLink } from "@/services/evidenceLink";
+import { useNotifications } from "@/stores/notifications";
+import FormDateRange from "@/components/forms/FormDateRange.vue";
 import FormSelect from "@/components/forms/FormSelect.vue";
 import type { FailureEvidence, Trade } from "@/types";
 import { trappedFocusTarget } from "@/services/focusTrap";
@@ -16,13 +23,63 @@ const failureRetryButton = ref<HTMLButtonElement | null>(null);
 const failureDetailLoading = computed(() => store.evidenceSelection?.status === "loading");
 const failureInspectionFailed = computed(() => store.evidenceSelection?.status === "error");
 let previousFocus: HTMLElement | null = null;
+let previousEvidenceId: string | null = null;
 
+const evidenceView = ref("trades");
+let previousView = "trades";
+const filtersOpen = ref(false);
 const tradeFilter = ref("All");
+const outcomeFilter = ref("all");
+const dateStart = ref("");
+const dateEnd = ref("");
+const search = ref("");
+const tradePage = ref(1);
+const tradePageSize = 50;
+const docked = ref(false);
+const componentActive = ref(true);
+let media: MediaQueryList;
+const updateDock = () => { docked.value = media.matches; };
+onMounted(() => { media = window.matchMedia("(min-width: 1280px)"); updateDock(); media.addEventListener("change",updateDock); });
+onBeforeUnmount(() => media?.removeEventListener("change",updateDock));
+onActivated(() => { componentActive.value = true; void synchronizeInspector(); });
+onDeactivated(() => { componentActive.value = false; });
+let previousOverflow = "";
+let locked = false;
+const releaseBackground = () => {
+  if (!locked) return;
+  document.querySelector<HTMLElement>(".app-shell")?.removeAttribute("inert");
+  document.body.style.overflow = previousOverflow;
+  locked = false;
+};
+watch(() => componentActive.value && store.activeTab === "evidence" && !docked.value && Boolean(store.evidenceSelection), modal => {
+  if (modal && !locked) { previousOverflow = document.body.style.overflow; document.body.style.overflow = "hidden"; document.querySelector<HTMLElement>(".app-shell")?.setAttribute("inert", ""); locked = true; }
+  if (!modal) releaseBackground();
+}, { immediate: true, flush: "post" });
+onBeforeUnmount(releaseBackground);
+const linkError = ref("");
+const notifications = useNotifications();
+const filteredTrades = computed(() => (store.result?.trades ?? []).filter(trade =>
+  (tradeFilter.value === "All" || trade.symbol === tradeFilter.value)
+  && (outcomeFilter.value === "all" || (outcomeFilter.value === "profit" ? trade.netProfit > 0 : trade.netProfit <= 0))
+  && (!dateStart.value || trade.exitDate >= dateStart.value) && (!dateEnd.value || trade.entryDate <= dateEnd.value)
+  && `${trade.symbol} ${trade.entryDate} ${trade.exitDate} ${trade.exitReason}`.toLowerCase().includes(search.value.toLowerCase().trim())));
+const tradePageCount = computed(() => Math.max(1,Math.ceil(filteredTrades.value.length/tradePageSize)));
+const navigationIds = computed(() => store.evidenceSelection?.kind === "failure" ? displayFailures.value.map(item => item.id) : filteredTrades.value.flatMap(item => item.id ? [item.id] : []));
+const navigationIndex = computed(() => navigationIds.value.indexOf(store.evidenceSelection?.id ?? ""));
+function moveEvidence(offset: number) { const id = navigationIds.value[navigationIndex.value+offset]; if (id && store.evidenceSelection) void chooseEvidence(store.evidenceSelection.kind,id); }
+async function copyEvidenceLink() {
+  linkError.value = "";
+  if (!store.evidenceSelection) return;
+  try { await navigator.clipboard.writeText(evidenceLink(window.location.origin,store.evidenceSelection)); notifications.push("Private evidence link copied. Sign-in is still required."); }
+  catch { linkError.value = "Clipboard unavailable. Try again in this browser."; }
+}
+function clearFilters() { tradeFilter.value = "All"; outcomeFilter.value = "all"; search.value = ""; dateStart.value = ""; dateEnd.value = ""; }
+watch([tradeFilter,outcomeFilter,search,dateStart,dateEnd],() => { tradePage.value = 1; });
 const signalStatusFilter = ref("All");
 const signalSymbolFilter = ref("All");
 const signalPage = ref(1);
 const signalPageSize = 100;
-const visibleTrades = computed(() => tradeFilter.value === "All" ? store.result?.trades ?? [] : (store.result?.trades ?? []).filter((trade) => trade.symbol === tradeFilter.value));
+const visibleTrades = computed(() => filteredTrades.value.slice((tradePage.value-1)*tradePageSize,tradePage.value*tradePageSize));
 const symbols = computed(() => ["All", ...new Set((store.result?.trades ?? []).map((trade) => trade.symbol))]);
 const signalSymbols = computed(() => ["All", ...new Set((store.result?.signalDiagnostics ?? []).map((event) => event.symbol))]);
 const tradeFilterOptions = computed(() => symbols.value.map((symbol) => ({ value: symbol, label: symbol })));
@@ -41,7 +98,7 @@ const formatMoney = (value: number) => `${value >= 0 ? "+" : "−"}$${Math.abs(v
 const formatQuantity = (value: number) => value.toLocaleString(undefined, { maximumFractionDigits: 2 });
 const isReported = (value: string | undefined) => Boolean(value && value.trim().toLowerCase() !== "not reported");
 const assumption = (key: string) => Object.entries(store.result?.assumptions ?? {}).find(([label]) => label.toLowerCase().includes(key.toLowerCase()))?.[1] ?? "Not reported";
-const label = (value: string) => value.replaceAll(/[._-]+/g, " ").replace(/^./, (letter) => letter.toUpperCase());
+const label = (value: string) => value.replaceAll(/([a-z])([A-Z])/g, (_, lower: string, upper: string) => `${lower} ${upper.toLowerCase()}`).replaceAll(/[._-]+/g, " ").replace(/^./, (letter) => letter.toUpperCase());
 const failureCosts = computed(() => Object.entries(selectedFailure.value?.costs ?? {}).map(([key, value]) => ({ label: label(key), value: typeof value !== "number" ? String(value) : key.toLowerCase().includes("bps") ? `${value.toLocaleString()} bps per side` : key.toLowerCase().includes("cost") ? `$${value.toLocaleString(undefined, { maximumFractionDigits: 4 })}` : value.toLocaleString(undefined, { maximumFractionDigits: 4 }) })));
 const indicatorInputs = computed(() => Array.isArray(selectedFailure.value?.indicatorEvidence?.inputs) ? selectedFailure.value.indicatorEvidence.inputs : []);
 const indicatorSeries = computed(() => Array.isArray(selectedFailure.value?.indicatorEvidence?.values) ? selectedFailure.value.indicatorEvidence.values : []);
@@ -62,7 +119,11 @@ async function loadFailureDetails() {
   await store.enrichFailures();
 }
 async function chooseEvidence(kind: "failure" | "trade", id: string, event?: Event) {
-  if (event?.currentTarget instanceof HTMLElement) previousFocus = event.currentTarget;
+  if (!store.evidenceSelection) previousView = evidenceView.value;
+  if (event?.currentTarget instanceof HTMLElement) {
+    previousFocus = event.currentTarget;
+    previousEvidenceId = event.currentTarget.dataset.evidenceId ?? null;
+  }
   try { await store.selectEvidence(store.latestRun?.id ?? "", { kind, id }); }
   catch { /* The selected inspector displays the error and retry control. */ }
 }
@@ -77,17 +138,35 @@ async function retrySelectedFailure() {
 }
 function closeDialog() {
   store.clearEvidenceSelection();
-  nextTick(() => (previousFocus?.isConnected ? previousFocus : document.querySelector<HTMLElement>('[aria-controls="panel-evidence"]'))?.focus());
+  evidenceView.value = previousView;
+  nextTick(() => {
+    const origin = previousEvidenceId ? document.querySelector<HTMLElement>(`[data-evidence-id="${CSS.escape(previousEvidenceId)}"]`) : null;
+    (origin ?? (previousFocus?.isConnected ? previousFocus : document.querySelector<HTMLElement>('[aria-controls="panel-evidence"]')))?.focus();
+    previousFocus = null;
+    previousEvidenceId = null;
+  });
 }
-watch(() => store.evidenceSelection?.revision, async (revision) => {
-  if (revision === undefined) return;
+async function synchronizeInspector() {
+  if (!store.evidenceSelection || !componentActive.value || store.activeTab !== "evidence") return;
+  if (evidenceView.value !== "chart") previousView = evidenceView.value;
+  evidenceView.value = "chart";
   await nextTick();
-  dialog.value?.focus();
-}, { immediate: true });
+  dialog.value?.querySelector<HTMLButtonElement>(".drawer-close")?.focus();
+}
+watch(() => store.evidenceSelection?.revision, () => void synchronizeInspector(), { immediate: true, flush: "post" });
+async function reviewDecision() {
+  closeDialog();
+  store.activeTab = "court";
+  await nextTick();
+  const heading = document.getElementById("decision-heading");
+  heading?.scrollIntoView({ block: "center" });
+  heading?.focus({ preventScroll: true });
+}
 function handleDialogKey(event: KeyboardEvent) {
-  if (!selectedFailure.value && !selectedTrade.value) return;
+  if (!componentActive.value || store.activeTab !== "evidence" || (!selectedFailure.value && !selectedTrade.value)) return;
+  if (document.querySelector("dialog[open]")) return;
   if (event.key === "Escape") { event.preventDefault(); closeDialog(); return; }
-  if (event.key !== "Tab" || !dialog.value) return;
+  if (docked.value || event.key !== "Tab" || !dialog.value) return;
   const focusable = [...dialog.value.querySelectorAll<HTMLElement>('button,[href],input,select,textarea,[tabindex]:not([tabindex="-1"])')].filter((item) => !item.hasAttribute("disabled"));
   if (!focusable.length) return;
   const active = document.activeElement instanceof HTMLElement ? document.activeElement : null;
@@ -101,7 +180,7 @@ watch([signalStatusFilter, signalSymbolFilter], () => { signalPage.value = 1; })
 </script>
 
 <template>
-  <div class="evidence-tab-root">
+  <div class="evidence-tab-root" :class="{ 'evidence-tab-root--inspecting': docked && (selectedFailure || selectedTrade) }">
     <section v-if="!store.courtComplete || store.courtInvalid" class="evidence-empty">
       <Database :size="20" aria-hidden="true" />
       <h3>{{ store.courtInvalid ? "No historical result" : "No admitted evidence" }}</h3>
@@ -110,7 +189,16 @@ watch([signalStatusFilter, signalSymbolFilter], () => { signalPage.value = 1; })
     </section>
 
     <div v-else class="evidence-stack">
+      <header class="evidence-heading">
+        <div><h2>Evidence</h2><p>Inspect the trades and market periods behind this result.</p></div>
+        <InvestigationChecklist compact />
+      </header>
+      <div class="evidence-view-control">
+        <SegmentedControl v-model="evidenceView" label="Evidence to view" :options="[{value:'trades',label:'Trades'},{value:'failures',label:'Stress periods'},{value:'chart',label:'Chart'},{value:'signals',label:'Signals'}]" />
+        <span v-if="store.result?.data?.provider === 'synthetic_demo'" class="evidence-demo">Synthetic demo · Generated prices</span>
+      </div>
       <CandlestickEvidenceChart
+        v-if="evidenceView === 'chart'"
         :focus="store.evidenceFocus"
         @select-trade="openChartTrade"
         :evidence="store.result?.marketEvidence ?? {}"
@@ -118,25 +206,20 @@ watch([signalStatusFilter, signalSymbolFilter], () => { signalPage.value = 1; })
         :error="store.latestRun?.error ?? ''"
       />
 
-      <section class="trades-section" aria-labelledby="trades-heading">
+      <section v-if="evidenceView === 'trades'" class="trades-section" aria-labelledby="trades-heading">
         <header class="section-heading section-heading--flat">
-          <div>
-            <p class="eyebrow">Ledger</p>
-            <h2 id="trades-heading">Completed trades</h2>
-          </div>
-          <div class="table-filter">
-            <Filter :size="13" aria-hidden="true" />
-            <label class="sr-only" for="trade-filter">Filter trades by symbol</label>
-            <FormSelect
-              id="trade-filter"
-              v-model="tradeFilter"
-              class="trade-filter-select"
-              :options="tradeFilterOptions"
-              aria-label="Filter trades by symbol"
-            />
-          </div>
+          <h3 id="trades-heading">{{ filteredTrades.length }} completed {{ filteredTrades.length === 1 ? 'trade' : 'trades' }}</h3>
+          <button class="button button--secondary button--small" type="button" :aria-expanded="filtersOpen" aria-controls="trade-filters" @click="filtersOpen = !filtersOpen"><Filter :size="13" />Filters</button>
         </header>
-
+        <RevealPanel id="trade-filters" :open="filtersOpen">
+          <div class="evidence-filter-bar">
+            <FormSelect id="trade-filter" v-model="tradeFilter" class="trade-filter-select" :options="tradeFilterOptions" aria-label="Filter trades by symbol" />
+            <SegmentedControl v-model="outcomeFilter" label="Trade outcome" :options="[{value:'all',label:'All trades'},{value:'profit',label:'Profit'},{value:'loss',label:'Loss or flat'}]" />
+            <FormDateRange title="Filter trade periods" :start="dateStart || store.currentCase?.startDate || ''" :end="dateEnd || store.currentCase?.endDate || ''" :max="store.currentCase?.endDate || ''" @apply="(start,end) => { dateStart = start; dateEnd = end; }" />
+            <label class="evidence-search"><Search :size="14" /><input v-model="search" type="search" aria-label="Search trades by symbol, date or exit reason" placeholder="Symbol, date or exit reason" /></label>
+          </div>
+        </RevealPanel>
+        <div v-if="tradeFilter !== 'All' || outcomeFilter !== 'all' || search || dateStart" class="applied-filters"><span>{{ filteredTrades.length }} of {{ store.result?.trades.length }} trades</span><button v-if="tradeFilter !== 'All'" @click="tradeFilter = 'All'">{{ tradeFilter }} <X :size="11" /></button><button v-if="outcomeFilter !== 'all'" @click="outcomeFilter = 'all'">{{ outcomeFilter === 'profit' ? 'Profit' : 'Loss or flat' }} <X :size="11" /></button><button v-if="dateStart" @click="dateStart = ''; dateEnd = ''">Overlaps {{ dateStart }} → {{ dateEnd }} <X :size="11" /></button><button v-if="search" @click="search = ''">“{{ search }}” <X :size="11" /></button><button v-if="tradeFilter !== 'All' || outcomeFilter !== 'all' || search || dateStart" @click="clearFilters">Clear filters</button></div>
         <div class="trade-table-wrap">
           <table>
             <caption class="sr-only">Completed trades recorded by this Court run</caption>
@@ -151,26 +234,26 @@ watch([signalStatusFilter, signalSymbolFilter], () => { signalPage.value = 1; })
             </colgroup>
             <thead><tr><th>Trade</th><th>Period</th><th>Entry</th><th>Exit</th><th>P&amp;L</th><th>Reason</th><th>View</th></tr></thead>
             <tbody>
-              <tr v-for="trade in visibleTrades" :key="trade.id">
+              <tr v-for="trade in visibleTrades" :key="trade.id" :class="{ 'trade-row--selected': trade.id === selectedTrade?.id }">
                 <td><div class="trade-identity"><strong class="symbol">{{ trade.symbol }}</strong><small>{{ formatQuantity(trade.quantity) }} shares</small></div></td>
                 <td><span class="mono trade-period">{{ trade.entryDate }} <span aria-hidden="true">→</span> {{ trade.exitDate }}</span></td>
                 <td><span class="mono trade-price">${{ trade.entryPrice.toFixed(2) }}</span></td>
                 <td><span class="mono trade-price">${{ trade.exitPrice.toFixed(2) }}</span></td>
                 <td><span class="mono trade-pnl" :class="trade.netProfit >= 0 ? 'trade-pnl--positive' : 'trade-pnl--negative'">{{ formatMoney(trade.netProfit) }}</span></td>
                 <td><span class="trade-reason" :title="trade.exitReason">{{ trade.exitReason }}</span></td>
-                <td><button class="inspect-button" type="button" :aria-label="`Inspect ${trade.symbol} trade from ${trade.entryDate}`" @click="openTrade(trade, $event)"><Search :size="14" /></button></td>
+                <td><button class="inspect-button" :data-evidence-id="trade.id" type="button" :aria-label="`Inspect ${trade.symbol} trade from ${trade.entryDate}`" @click="openTrade(trade, $event)"><Search :size="14" /></button></td>
               </tr>
             </tbody>
           </table>
-          <p v-if="!visibleTrades.length" class="empty-line">No trades match this symbol.</p>
+          <p v-if="!visibleTrades.length" class="empty-line">{{ store.result?.trades.length ? "No trades match these filters. Clear filters to see the full ledger." : "This run returned no completed trades. Review skipped signals and the strategy rules." }}</p>
         </div>
+      <nav v-if="tradePageCount > 1" class="signal-pagination" aria-label="Trade ledger pages"><button type="button" :disabled="tradePage === 1" @click="tradePage--">Previous</button><span>Page {{ tradePage }} of {{ tradePageCount }} · {{ filteredTrades.length }} trades</span><button type="button" :disabled="tradePage >= tradePageCount" @click="tradePage++">Next</button></nav>
       </section>
 
-      <section class="failure-surface" aria-labelledby="failure-heading">
+      <section v-if="evidenceView === 'failures'" class="failure-surface" aria-labelledby="failure-heading">
         <header class="section-heading">
           <div>
-            <p class="eyebrow">Risk review</p>
-            <h2 id="failure-heading">Stress periods</h2>
+            <h3 id="failure-heading">Stress periods</h3>
           </div>
           <span class="failure-count">{{ displayFailures.length }} {{ displayFailures.length === 1 ? "period" : "periods" }}</span>
         </header>
@@ -191,6 +274,7 @@ watch([signalStatusFilter, signalSymbolFilter], () => { signalPage.value = 1; })
             v-for="(failure, index) in displayFailures"
             :key="failure.id"
             class="failure-row"
+            :data-evidence-id="failure.id"
             type="button"
             @click="openFailure(failure, $event)"
           >
@@ -209,8 +293,8 @@ watch([signalStatusFilter, signalSymbolFilter], () => { signalPage.value = 1; })
         <p v-else class="empty-line">No failure periods were returned.</p>
       </section>
 
-      <details class="assumptions signal-ledger">
-        <summary><span>Skipped and rejected signals</span><small>{{ store.result?.signalDiagnostics.length ?? 0 }} inspectable events</small></summary>
+      <section v-if="evidenceView === 'signals'" class="assumptions signal-ledger" aria-labelledby="signals-heading">
+        <h3 id="signals-heading">Skipped and rejected signals</h3>
         <div class="signal-controls">
           <div class="signal-control">
             <label for="signal-status-filter">Status</label>
@@ -221,6 +305,7 @@ watch([signalStatusFilter, signalSymbolFilter], () => { signalPage.value = 1; })
             <FormSelect id="signal-symbol-filter" v-model="signalSymbolFilter" class="signal-select" :options="signalSymbolOptions" aria-label="Signal symbol" />
           </div>
         </div>
+        <p class="signal-filter-summary">{{ filteredSignals.length }} of {{ store.result?.signalDiagnostics.length ?? 0 }} signal events <button v-if="signalStatusFilter !== 'All' || signalSymbolFilter !== 'All'" type="button" @click="signalStatusFilter = 'All'; signalSymbolFilter = 'All'">Clear signal filters</button></p>
         <div class="trade-table-wrap signal-table-wrap">
           <table>
             <thead><tr><th>Date</th><th>Symbol</th><th>Signal</th><th>Status</th><th>Reason</th></tr></thead>
@@ -229,11 +314,12 @@ watch([signalStatusFilter, signalSymbolFilter], () => { signalPage.value = 1; })
           <p v-if="!visibleSignals.length" class="empty-line">No signal events match these filters.</p>
         </div>
         <nav v-if="signalPageCount > 1" class="signal-pagination" aria-label="Signal ledger pages"><button type="button" :disabled="signalPage === 1" @click="signalPage -= 1">Previous</button><span>Page {{ signalPage }} of {{ signalPageCount }}</span><button type="button" :disabled="signalPage === signalPageCount" @click="signalPage += 1">Next</button></nav>
-      </details>
+      </section>
 
       <details class="assumptions">
         <summary><span>Run assumptions</span><small>Engine, costs, provenance</small></summary>
         <dl>
+          <div v-if="store.result?.data?.provider"><dt>Data snapshot</dt><dd>{{ store.result.data.provider }} · Adjustment: {{ store.result.data.adjustment || 'Not reported' }} · Retrieved {{ store.result.data.fetchedAt || 'Not reported' }}</dd></div>
           <div v-for="(value,key) in store.result?.assumptions" :key="key"><dt>{{ key }}</dt><dd>{{ value }}</dd></div>
           <div><dt>Engine</dt><dd class="mono">{{ store.result?.engineVersion }}</dd></div>
           <div><dt>Reproducibility ID</dt><dd class="mono">{{ store.result?.reproducibilityId }}</dd></div>
@@ -241,10 +327,12 @@ watch([signalStatusFilter, signalSymbolFilter], () => { signalPage.value = 1; })
       </details>
     </div>
 
-  <Teleport to="body">
-    <div v-if="selectedFailure" class="drawer-backdrop" @click.self="closeDialog">
-      <aside ref="dialog" class="evidence-drawer" tabindex="-1" role="dialog" aria-modal="true" aria-labelledby="failure-title">
+  <Teleport to="body" :disabled="docked">
+    <Transition name="inspector-motion">
+    <div v-if="selectedFailure && componentActive" class="drawer-backdrop" :class="{ 'drawer-backdrop--docked': docked }" @click.self="closeDialog">
+      <aside ref="dialog" class="evidence-drawer" tabindex="-1" role="dialog" :aria-modal="!docked" aria-labelledby="failure-title">
         <div class="drawer-header"><div><p v-if="store.evidenceSelection?.actor === 'agent'" role="status">Selected by agent</p><p class="eyebrow">Stress period</p><h2 id="failure-title">{{ selectedFailure.title }}</h2></div><button class="drawer-close" type="button" aria-label="Close evidence inspector" @click="closeDialog"><X :size="18" /></button></div>
+        <EvidenceInspectorNavigation :index="navigationIndex" :count="navigationIds.length" :error="linkError" @move="moveEvidence" @copy="copyEvidenceLink" />
         <div class="drawer-body">
           <div class="drawer-period"><span>{{ selectedFailure.period }}</span><strong class="negative">{{ selectedFailure.equityChange }}</strong></div><p class="drawer-summary">{{ selectedFailure.summary }}</p>
           <div
@@ -263,18 +351,23 @@ watch([signalStatusFilter, signalSymbolFilter], () => { signalPage.value = 1; })
               @click="retrySelectedFailure"
             >{{ failureDetailLoading ? "Trying again…" : "Try again" }}</button>
           </div>
-          <div class="evidence-label">Observed inputs</div><dl class="input-list"><div v-for="input in selectedFailure.inputs" :key="input.label"><dt>{{ input.label }}</dt><dd>{{ input.value }}</dd></div></dl>
+          <div class="evidence-label">Observed inputs</div><dl class="input-list"><div v-for="input in selectedFailure.inputs" :key="input.label"><dt>{{ label(input.label) }}</dt><dd>{{ input.value }}</dd></div></dl>
+          <details class="drawer-calculations"><summary>Calculation details</summary>
           <template v-if="failureCosts.length"><div class="evidence-label">Returned execution costs</div><dl class="input-list"><div v-for="cost in failureCosts" :key="cost.label"><dt>{{ cost.label }}</dt><dd>{{ cost.value }}</dd></div></dl></template>
           <template v-if="indicatorInputs.length || indicatorSeries.length"><div class="evidence-label">Returned indicator evidence</div><dl class="input-list"><div v-for="(input,index) in indicatorInputs" :key="`input-${index}`"><dt>Declared indicator</dt><dd>{{ describeIndicator(input) }}</dd></div><div v-for="(series,index) in indicatorSeries" :key="`series-${index}`"><dt>Observed series</dt><dd>{{ describeSeries(series) }}</dd></div></dl></template>
+          </details>
           <div class="evidence-label">Market context</div><div class="context-grid"><div><span>Regime</span><strong>{{ selectedFailure.regime }}</strong></div><div><span>Symbols involved</span><strong>{{ selectedFailure.symbols.join(" · ") || "None in returned period" }}</strong></div><div><span>Execution</span><strong>{{ assumption("execution") }}</strong></div><div><span>Period bars returned</span><strong>{{ selectedFailure.marketBars?.length ?? 0 }}</strong></div></div><div class="drawer-callout"><CircleAlert :size="15" /><span>Historical evidence, not a forecast.</span></div>
         </div>
-        <div class="drawer-footer"><button class="button button--secondary" @click="closeDialog">Close</button><button class="button" @click="closeDialog(); store.activeTab = 'court'">Review investigation decision <ExternalLink :size="14" /></button></div>
+        <div class="drawer-footer"><button class="button button--secondary" @click="closeDialog">Close</button><button class="button" @click="reviewDecision">Review investigation decision <ExternalLink :size="14" /></button></div>
       </aside>
     </div>
+    </Transition>
 
-    <div v-if="selectedTrade" class="drawer-backdrop" @click.self="closeDialog">
-      <aside ref="dialog" class="evidence-drawer evidence-drawer--trade" tabindex="-1" role="dialog" aria-modal="true" aria-labelledby="trade-title">
+    <Transition name="inspector-motion">
+    <div v-if="selectedTrade && componentActive" class="drawer-backdrop" :class="{ 'drawer-backdrop--docked': docked }" @click.self="closeDialog">
+      <aside ref="dialog" class="evidence-drawer evidence-drawer--trade" tabindex="-1" role="dialog" :aria-modal="!docked" aria-labelledby="trade-title">
         <div class="drawer-header"><div><p v-if="store.evidenceSelection?.actor === 'agent'" role="status">Selected by agent</p><p class="eyebrow">Recorded trade</p><h2 id="trade-title" class="trade-ticker">{{ selectedTrade.symbol }}</h2></div><button class="drawer-close" type="button" aria-label="Close trade inspector" @click="closeDialog"><X :size="18" /></button></div>
+        <EvidenceInspectorNavigation :index="navigationIndex" :count="navigationIds.length" :error="linkError" @move="moveEvidence" @copy="copyEvidenceLink" />
         <div class="drawer-body">
           <div class="trade-result">
             <span>Net profit</span>
@@ -304,11 +397,34 @@ watch([signalStatusFilter, signalSymbolFilter], () => { signalPage.value = 1; })
         <div class="drawer-footer"><button class="button button--secondary button--wide" @click="closeDialog">Done</button></div>
       </aside>
     </div>
+    </Transition>
   </Teleport>
   </div>
 </template>
 
 <style scoped lang="scss">
+.evidence-tab-root--inspecting { display:grid;grid-template-columns:minmax(0,1fr) 400px;gap:28px;align-items:start; }
+.drawer-backdrop--docked { position:sticky!important;top:calc(var(--app-header-height) + 72px)!important;z-index:30!important;inset:auto;grid-column:2;grid-row:1;height:calc(100dvh - var(--app-header-height) - 100px);background:none!important;backdrop-filter:none!important; }
+.drawer-backdrop--docked .evidence-drawer { width:100%;border:1px solid #333;border-radius:12px;overflow:hidden;box-shadow:none!important; }
+.drawer-backdrop--docked .drawer-header,.drawer-backdrop--docked .drawer-body { padding:20px; }
+.drawer-backdrop--docked .drawer-footer { padding:14px;flex-wrap:wrap; }
+.evidence-filter-bar{display:flex;justify-content:space-between;gap:16px;margin-bottom:12px;flex-wrap:wrap;}
+.evidence-search{display:flex;align-items:center;gap:9px;min-width:240px;padding:0 12px;border:1px solid #303030;border-radius:8px;color:#888;background:#141414;}
+.evidence-search input{width:100%;height:40px;border:0;outline:0;background:transparent;color:#ddd;font-size:12px;}
+.evidence-search:focus-within{outline:2px solid #ddd;outline-offset:2px;}
+.applied-filters{display:flex;min-height:36px;align-items:center;gap:8px;margin-bottom:8px;color:#929299;font-size:11px;flex-wrap:wrap;}
+.applied-filters>span{margin-right:8px;}
+.applied-filters button{display:flex;align-items:center;gap:6px;padding:5px 8px;border:1px solid #353535;border-radius:6px;background:#171717;color:#bbb;font-size:10px;cursor:pointer;}
+.trade-row--selected{background:#202020;box-shadow:inset 2px 0 #ddd;}
+.trade-table-wrap{max-height:580px;overflow:auto;}
+.trade-table-wrap thead{position:sticky;top:0;z-index:2;background:#151515;}
+.trade-table-wrap td:first-child,.trade-table-wrap th:first-child{position:sticky;left:0;background:#101010;z-index:1;}
+.trade-row--selected td:first-child{background:#202020;}
+.signal-filter-summary{color:#999;font-size:11px;margin:0 0 12px;}.signal-filter-summary button{margin-left:12px;padding:0;border:0;border-bottom:1px solid #555;background:transparent;color:#ccc;font-size:11px;cursor:pointer;}
+.evidence-context{display:grid;gap:10px;}.synthetic-disclosure{margin:0;color:#bbb;font-size:11px;line-height:1.6;}
+.evidence-provenance{margin:0;color:#939398;font-size:11px;line-height:1.7;}
+@media(max-width:720px){.evidence-search{width:100%;}.evidence-filter-bar>*{max-width:100%;}.drawer-footer{padding-bottom:calc(16px + env(safe-area-inset-bottom));}}
+
 .evidence-tab-root {
   min-width: 0;
 }
@@ -317,7 +433,7 @@ watch([signalStatusFilter, signalSymbolFilter], () => { signalPage.value = 1; })
   display: flex;
   width: 100%;
   flex-direction: column;
-  gap: 48px;
+  gap: 28px;
   padding: 12px 0 48px;
 }
 
@@ -781,12 +897,13 @@ watch([signalStatusFilter, signalSymbolFilter], () => { signalPage.value = 1; })
   border-left: 1px solid rgba(255, 255, 255, .12);
   background: #101010;
   box-shadow: -42px 0 120px rgba(0, 0, 0, .72);
-  animation: drawer-in 180ms ease-out;
 }
 
-@keyframes drawer-in {
-  from { transform: translateX(32px); opacity: .4; }
-}
+.inspector-motion-enter-active { transition: opacity 180ms ease; }
+.inspector-motion-enter-active .evidence-drawer { transition: transform var(--duration-overlay) var(--ease-out), opacity 180ms ease; }
+.inspector-motion-enter-from { opacity: 0; }
+.inspector-motion-enter-from .evidence-drawer { opacity: .5; transform: translateX(34px); }
+.drawer-backdrop--docked.inspector-motion-enter-from .evidence-drawer { transform: translateY(9px); }
 
 .evidence-drawer--trade {
   width: min(480px, 100%);
@@ -816,7 +933,7 @@ watch([signalStatusFilter, signalSymbolFilter], () => { signalPage.value = 1; })
   height: 34px;
   place-items: center;
   border: 1px solid #333;
-  border-radius: 2px;
+  border-radius: 8px;
   color: #999;
   background: transparent;
   cursor: pointer;
@@ -983,7 +1100,7 @@ watch([signalStatusFilter, signalSymbolFilter], () => { signalPage.value = 1; })
 }
 
 .trade-result strong {
-  font: 500 26px "IBM Plex Mono", monospace;
+  font: 600 28px Inter, ui-sans-serif, system-ui, sans-serif;
   letter-spacing: -.04em;
 }
 
@@ -1122,6 +1239,29 @@ watch([signalStatusFilter, signalSymbolFilter], () => { signalPage.value = 1; })
   .drawer-footer {
     display: grid;
     padding-inline: 20px;
+    padding-bottom: calc(16px + env(safe-area-inset-bottom));
   }
+  .drawer-header { padding-top: calc(27px + env(safe-area-inset-top)); }
+  .inspect-button, .drawer-close { width:44px;height:44px; }
 }
+
+.evidence-heading { display: flex; justify-content: space-between; align-items: center; gap: 24px; }
+.evidence-heading h2 { margin: 0; font-size: 28px; letter-spacing: -.035em; font-weight: 600; }
+.evidence-heading p { margin: 9px 0 0; color: #93939d; font-size: 13px; line-height: 1.6; }
+.evidence-view-control { display: flex; justify-content: space-between; align-items: center; gap: 18px; padding: 4px 0 0; }
+.evidence-demo { color: #8b8b96; font-size: 11px; }
+.evidence-stack { gap: 24px; }
+.evidence-stack .section-heading { padding: 0 0 16px; border: 0; }
+.section-heading h3, .signal-ledger > h3 { margin: 0; font-size: 15px; font-weight: 550; color: #cfcfd9; }
+.evidence-filter-bar { padding: 4px 0 18px; margin: 0; }
+.evidence-filter-bar .trade-filter-select { width: 150px; }
+.trades-section .trade-table-wrap { max-height: 580px; }
+.evidence-tab-root--inspecting .evidence-heading { align-items: flex-start; flex-direction: column; gap: 10px; }
+.evidence-tab-root--inspecting .evidence-view-control { align-items: flex-start; flex-direction: column; gap: 14px; }
+@media(max-width:720px) {
+  .evidence-heading { flex-direction: column; align-items: flex-start; gap: 10px; }
+  .evidence-view-control { flex-direction: column; align-items: flex-start; gap: 14px; }
+  .evidence-view-control :deep(.segmented-control) { max-width: 100%; }
+}
+.drawer-calculations { margin: 22px 0; border-block: 1px solid #303030; }.drawer-calculations > summary { padding: 16px 0; color: #bebec8; font-size: 12px; cursor: pointer; }.drawer-calculations > .input-list { margin-bottom: 18px; }
 </style>

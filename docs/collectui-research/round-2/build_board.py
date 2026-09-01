@@ -1,0 +1,71 @@
+import json
+from pathlib import Path
+
+root = Path(__file__).parent
+candidates = {x['id']: x for x in json.loads((root / 'candidates.json').read_text())}
+details = [
+    {
+        'id': '04-agent-fanout', 'label': 'Execution diagram', 'name': 'Sub-Agent Fanout',
+        'height': 890,
+        'lead': 'Fine connectors, small colored nodes, and a perfectly aligned result list.',
+        'craft': [
+            ['Composition', 'The diagram has room to breathe above a compact list. The white working surface connects both parts without wrapping every row in a box.'],
+            ['Detail', 'Hairline curves meet small circular nodes. Color lives in the nodes and their matching states; the frame stays quiet.'],
+            ['Motion', 'Moving packets explain the branch and merge. Filled checks replace outlined working states without shifting the layout.'],
+        ],
+        'application': 'Use this visual treatment for an expanded run inspector: branch the robustness checks above their exact results. Keep the main runs page flat.',
+        'avoid': 'Do not add an agent diagram where a simple sequence is more accurate. Use sentence case and the app’s sans-serif for every label.',
+    },
+    {
+        'id': '01-sandbox-limits', 'label': 'Threshold controls', 'name': 'Sandbox Limits',
+        'height': 980,
+        'lead': 'A quiet frame, crisp chart blocks, and one sharply defined warning accent.',
+        'craft': [
+            ['Composition', 'Two plots share a baseline and matching geometry. A single inset surface holds the plots and the smaller progress row.'],
+            ['Detail', 'Small value handles sit directly on the limit lines. Diagonal hatching makes a breached threshold visible without repainting the panel.'],
+            ['Motion', 'The limit line flexes when usage reaches it. The small deformation gives the interaction a tactile response.'],
+        ],
+        'application': 'Borrow the direct labels, limit handles, and precise warning treatment for drawdown limits or stress-test tolerances. Keep the numerical threshold fixed and explicit.',
+        'avoid': 'Do not bend financial data or threshold geometry. Apply any spring response to a handle or halo instead. Respect reduced motion.',
+    },
+    {
+        'id': '03-life-in-weeks', 'label': 'Data texture', 'name': 'Life in Weeks',
+        'height': 830,
+        'lead': 'Hundreds of tiny marks create one coherent visual, with remarkably little surrounding chrome.',
+        'craft': [
+            ['Composition', 'The matrix is the dominant object. Its legend, three summaries, and slider sit on clear horizontal alignments below it.'],
+            ['Detail', 'Uniform cell spacing creates texture. The current position is distinct, while unfilled cells recede into a very pale grid.'],
+            ['Motion', 'A short cascade fills the cells instead of changing the whole matrix at once. The movement follows the structure of the data.'],
+        ],
+        'application': 'Use the cell rhythm and restrained framing for a parameter-stability matrix. Every cell needs a real tested combination, labeled axes, and a readable value on focus.',
+        'avoid': 'Do not copy its age semantics or decorative gradient. Choose a meaningful, accessible scale and pair color with values and a legend.',
+    },
+]
+for d in details:
+    ref = candidates[d['id']]
+    d['url'] = ref['page']
+    d['source'] = ref['source']
+    d['video'] = ref['media'][0]
+    d['fallback'] = f"screenshots/{d['id']}-source.jpg"
+(root / 'shortlist.json').write_text(json.dumps(details, indent=2))
+
+html = r'''<!doctype html>
+<html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Strategy Court · Revised visual references</title>
+<style>
+*{box-sizing:border-box}body{margin:0;background:#fff;color:#191919;font:14px/1.5 Inter,ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}button,a,input{font:inherit}a{color:inherit;text-underline-offset:4px}button{cursor:pointer}header{height:66px;display:flex;align-items:center;justify-content:space-between;padding:0 32px;border-bottom:1px solid #eee;gap:24px}header strong{font-size:14px;font-weight:600}nav{display:flex;gap:5px}nav button{border:0;border-radius:7px;color:#777;background:transparent;padding:8px 12px}nav button[aria-selected=true]{color:#181818;background:#f1f1f1}main{display:grid;grid-template-columns:minmax(540px,1fr) 420px;max-width:1400px;margin:auto;min-height:650px}.stage{position:relative;overflow:hidden;height:646px;background:white}.stage video{position:absolute;height:var(--media-height);width:auto;max-width:none;left:50%;top:50%;transform:translate(-50%,-50%)}.stage img{width:100%;height:100%;object-fit:contain}aside{padding:32px 36px 20px 18px}aside .eyebrow{font-size:12px;color:#767676;margin:0 0 8px}h1{font-size:30px;line-height:1.15;letter-spacing:-.8px;font-weight:600;margin:0 0 13px}.lead{font-size:16px;line-height:1.5;color:#626262;margin:0 0 20px}.point{margin:0 0 13px}.point strong{font-size:13px;font-weight:600}.point p{font-size:12px;line-height:1.5;color:#6d6d6d;margin:3px 0 0}.application{border-top:1px solid #e9e9e9;padding-top:15px;margin-top:18px}.application p{color:#333;font-size:12px;margin:5px 0}.source{display:flex;gap:15px;margin-top:15px;font-size:12px}.controls{display:flex;gap:8px;align-items:center;margin-top:17px}.controls button{border:1px solid #e4e4e4;background:#fff;color:#444;padding:5px 10px;border-radius:6px;font-size:12px}.controls span{font-size:11px;color:#858585}.controls input{width:64px;padding:4px 6px;border:1px solid #e4e4e4;border-radius:6px;font-size:12px}footer{border-top:1px solid #eee;padding:13px 32px;display:flex;justify-content:space-between;gap:20px;font-size:11px;color:#7c7c7c}footer a{color:#555}.error{position:absolute;inset:0;display:grid;place-items:center;padding:40px}.note{font-size:11px;color:#7b7b7b}.avoid{margin-top:10px}body[data-focus=true] main{display:block;max-width:100%}body[data-focus=true] aside{display:none}body[data-focus=true] header{height:50px}body[data-focus=true] .stage{height:calc(100vh - 91px)}body[data-focus=true] footer{padding:10px 32px}body[data-focus=true] nav button{font-size:12px;padding:5px 10px}
+@media(max-width:850px){header{padding:12px 18px;height:auto;align-items:flex-start;flex-direction:column;gap:9px}nav{flex-wrap:wrap}nav button{padding:6px 8px;font-size:12px}main{display:flex;flex-direction:column;min-height:0}.stage{height:520px}.stage video{height:calc(var(--media-height) * .73)}aside{padding:22px 24px 30px}footer{padding:15px 24px;flex-direction:column;gap:7px}body[data-focus=true] header{height:auto}body[data-focus=true] .stage{height:580px}}
+</style>
+<header><strong>Strategy Court · Visual direction, revised</strong><nav aria-label="References"></nav></header>
+<main><div class="stage" aria-label="Original design video"></div><aside></aside></main>
+<footer><span>Original videos by Jeet, discovered on CollectUI. Enlarged for inspection; no design changes.</span><a href="README.md">Read the visual brief</a></footer>
+<script>
+const references=__DATA__;
+const nav=document.querySelector('nav'),stage=document.querySelector('.stage'),aside=document.querySelector('aside');
+const params=new URLSearchParams(location.search);document.body.dataset.focus=params.get('focus')==='1';
+references.forEach((r,i)=>{const b=document.createElement('button');b.textContent=r.label;b.onclick=()=>show(i);nav.append(b)});
+function show(i){const r=references[i];document.querySelectorAll('nav button').forEach((b,j)=>b.setAttribute('aria-selected',String(i===j)));stage.style.setProperty('--media-height',r.height+'px');stage.replaceChildren();const v=document.createElement('video');v.src=r.video;v.muted=true;v.loop=true;v.playsInline=true;v.preload='auto';v.autoplay=!matchMedia('(prefers-reduced-motion: reduce)').matches;v.setAttribute('aria-label',r.name+' original video by Jeet');stage.append(v);v.onerror=()=>{stage.innerHTML=`<img src="${r.fallback}" alt="Original CollectUI browser screenshot"><div class="error"><p>Video unavailable. <a href="${r.url}" target="_blank" rel="noreferrer">Open the original on CollectUI</a>.</p></div>`};aside.innerHTML=`<p class="eyebrow">Jeet · Visual reference ${i+1} of 3</p><h1>${r.name}</h1><p class="lead">${r.lead}</p>${r.craft.map(([title,text])=>`<div class="point"><strong>${title}</strong><p>${text}</p></div>`).join('')}<div class="application"><strong>Where it belongs in Strategy Court</strong><p>${r.application}</p><p class="note avoid">${r.avoid}</p></div><div class="source"><a href="${r.url}" target="_blank" rel="noreferrer">CollectUI source ↗</a><a href="${r.source}" target="_blank" rel="noreferrer">Designer’s post ↗</a></div><div class="controls"><button id="pause">${v.autoplay?'Pause':'Play'}</button><button id="restart">Restart</button><input id="scrub" type="number" min="0" max="100" step="0.1" value="0" aria-label="Playback time in seconds"><span id="clock">0s</span></div>`;document.querySelector('#pause').onclick=()=>{if(v.paused)v.play();else v.pause()};v.onpause=()=>document.querySelector('#pause').textContent='Play';v.onplay=()=>document.querySelector('#pause').textContent='Pause';document.querySelector('#restart').onclick=()=>{v.currentTime=0;v.play()};const scrub=document.querySelector('#scrub');v.onloadedmetadata=()=>scrub.max=v.duration;v.ontimeupdate=()=>{scrub.value=v.currentTime;document.querySelector('#clock').textContent=Math.floor(v.currentTime)+'s'};scrub.oninput=()=>{v.currentTime=Number(scrub.value);v.pause()};history.replaceState(null,'','?ref='+i+(params.get('focus')==='1'?'&focus=1':''));}
+show(Math.min(2,Math.max(0,Number(params.get('ref'))||0)));
+</script></html>'''
+(root / 'index.html').write_text(html.replace('__DATA__', json.dumps(details)))
+print('Wrote revised board with 3 source videos and visual notes.')

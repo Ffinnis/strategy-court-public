@@ -2,6 +2,7 @@
 import { ref, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import { ArrowDown, ArrowRight, ArrowUpRight, Check, Plus } from "lucide-vue-next";
+import PixelButton from "@/components/ui/PixelButton.vue";
 import LandingMarketPreview from "@/components/LandingMarketPreview.vue";
 import { useCourtStore } from "@/stores/court";
 import { authClient } from "@/services/auth";
@@ -70,16 +71,16 @@ const steps = [
         <p>Bring a trading idea from your AI assistant. Investigate its weaknesses together, with inspectable rules and historical evidence.</p>
         <div class="hero__actions">
           <RouterLink class="button hero__primary" to="/new">Create strategy <ArrowUpRight :size="17" /></RouterLink>
-          <button class="hero__sample" type="button" :disabled="sampleBusy || sessionState.isPending" @click="openSample()">
+          <PixelButton class="hero__sample" :disabled="sampleBusy || sessionState.isPending" @click="openSample()">
             {{ sampleBusy ? "Opening sample…" : "Open sample" }} <ArrowRight :size="15" />
-          </button>
+          </PixelButton>
         </div>
         <div v-if="sampleError"><p class="sample-error" role="alert">{{ sampleError }}</p><button class="hero__sample" type="button" :disabled="sampleBusy" @click="openSample('synthetic')">Use synthetic software demo</button></div>
         <span v-else class="hero__note">Historical tests. No orders placed.</span>
       </div>
     </section>
 
-    <section class="investigation" aria-label="Synthetic chart and example trading rules">
+    <section v-motion-reveal class="investigation" aria-label="Synthetic chart and example trading rules">
       <header class="investigation__header">
         <div class="investigation__instrument"><strong>{{ LANDING_MARKET_SOURCE.symbol }}</strong><span>Example symbol <i>·</i> 2024</span></div>
         <span class="investigation__status"><span />Synthetic demo</span>
@@ -106,7 +107,7 @@ const steps = [
       </footer>
     </section>
 
-    <section id="tests" class="tests-section" aria-labelledby="tests-heading">
+    <section id="tests" v-motion-reveal class="tests-section" aria-labelledby="tests-heading">
       <div class="section-intro">
         <span class="section-intro__context">The Court</span>
         <h2 id="tests-heading">A return number<br> leaves things out.</h2>
@@ -125,7 +126,7 @@ const steps = [
       </div>
     </section>
 
-    <section id="process" class="process-section" aria-labelledby="process-heading">
+    <section id="process" v-motion-reveal class="process-section" aria-labelledby="process-heading">
       <header><div><span class="section-intro__context">Your investigation</span><h2 id="process-heading">From a rule to a record.</h2></div><span class="process-section__note">Every change stays in the history.</span></header>
       <ol class="process-list">
         <li v-for="(step, index) in steps" :key="step.name"><span class="process-list__number">{{ index + 1 }}</span><h3>{{ step.name }}</h3><p>{{ step.detail }}</p></li>
@@ -133,7 +134,7 @@ const steps = [
       <div class="agent-note"><span class="agent-note__mark"><Check :size="14" /></span><p>Work by hand or with a WebMCP agent. <span>You confirm the rules before a test runs.</span></p></div>
     </section>
 
-    <section class="landing-close" aria-label="Create your first strategy">
+    <section v-motion-reveal class="landing-close" aria-label="Create your first strategy">
       <h2>Bring a rule.<br><span>Leave with evidence.</span></h2>
       <RouterLink class="button hero__primary" to="/new">Create strategy <ArrowUpRight :size="17" /></RouterLink>
     </section>

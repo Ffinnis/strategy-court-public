@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref } from "vue";
+import SegmentedControl from "@/components/ui/SegmentedControl.vue";
 import { LANDING_MARKET_DATA } from "@/data/syntheticLandingMarket";
 
 const period = ref<"6m" | "1y">("1y");
@@ -8,6 +9,11 @@ const keyboardAnnouncement = ref("");
 const bars = computed(() => period.value === "6m"
   ? LANDING_MARKET_DATA.filter((bar) => bar[0] >= "2024-07-01")
   : LANDING_MARKET_DATA);
+const weakestDay = computed(() => bars.value.slice(1).reduce((best,bar,index) => {
+  const change=bar[4]/bars.value[index]![4]-1;
+  return change < best.change ? {index:index+1,change} : best;
+},{index:0,change:0}));
+const firstBelowTrend = computed(() => bars.value.findIndex(bar=>bar[4]<bar[6]));
 const current = computed(() => bars.value[activeIndex.value ?? bars.value.length - 1]!);
 const periodReturn = computed(() => (bars.value.at(-1)![4] / bars.value[0]![4] - 1) * 100);
 const plot = ref<HTMLElement | null>(null);
@@ -72,10 +78,7 @@ function selectBar(index: number) {
         <strong>{{ formatPrice(bars.at(-1)![4]) }}</strong>
         <span>{{ periodReturn >= 0 ? "+" : "" }}{{ periodReturn.toFixed(2) }}% <span class="market-preview__period">price change</span></span>
       </div>
-      <div class="market-preview__ranges" aria-label="Chart time range">
-        <button type="button" :aria-pressed="period === '6m'" @click="changePeriod('6m')">6 months</button>
-        <button type="button" :aria-pressed="period === '1y'" @click="changePeriod('1y')">1 year</button>
-      </div>
+      <SegmentedControl :model-value="period" label="Chart time range" :options="[{value:'6m',label:'6 months'},{value:'1y',label:'1 year'}]" @update:model-value="changePeriod($event as '6m' | '1y')" />
     </div>
 
     <div class="market-preview__readout" aria-label="Synthetic price details">
@@ -117,6 +120,7 @@ function selectBar(index: number) {
         <g class="market-preview__months"><text v-for="month in monthLabels" :key="month.label" :x="month.x" :y="height - 8">{{ month.label }}</text></g>
       </svg>
     </div>
+    <div class="preview-findings" aria-label="Inspect generated price events"><button type="button" @click="selectBar(weakestDay.index)"><span>Largest daily decline</span><strong>{{ (weakestDay.change*100).toFixed(2) }}%</strong><small>{{ bars[weakestDay.index]?.[0] }} · Inspect</small></button><button v-if="firstBelowTrend >= 0" type="button" @click="selectBar(firstBelowTrend)"><span>First close below SMA 120</span><strong>{{ bars[firstBelowTrend]?.[0] }}</strong><small>Synthetic event · Inspect</small></button></div>
     <span class="market-preview__announcement" role="status" aria-live="polite" aria-atomic="true">{{ keyboardAnnouncement }}</span>
     <div class="market-preview__legend">
       <span><i class="market-preview__key market-preview__key--price" />Daily price</span>
@@ -127,6 +131,8 @@ function selectBar(index: number) {
 </template>
 
 <style scoped lang="scss">
+.preview-findings{display:grid;grid-template-columns:1fr 1fr;gap:20px;margin:12px 0 20px;padding-top:16px;border-top:1px solid #2c2c2c;}.preview-findings button{display:grid;gap:7px;padding:0;border:0;background:transparent;text-align:left;cursor:pointer;}.preview-findings span{color:#939399;font-size:10px;}.preview-findings strong{color:#dedee2;font-size:15px;font-weight:550;}.preview-findings small{color:#898991;font-size:10px;}.preview-findings button:hover strong{color:#fff;}
+
 .market-preview { min-width: 0; padding: 28px 28px 20px; }
 .market-preview__toolbar { display: flex; align-items: center; justify-content: space-between; gap: 20px; }
 .market-preview__quote { display: flex; align-items: baseline; flex-wrap: wrap; gap: 12px; font-variant-numeric: tabular-nums; }

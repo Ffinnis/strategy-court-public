@@ -415,12 +415,12 @@ describe("connected-state integrity", () => {
     expect(store.error).toContain("Set the entry and exit rules");
   });
 
-  test("the owner workspace keeps the persistent summary and full run evidence inspectable", () => {
+  test("the owner workspace keeps the case identity and full run evidence inspectable", () => {
     const header = readFileSync(new URL("../src/components/VerdictHeader.vue", import.meta.url), "utf8");
     const court = readFileSync(new URL("../src/components/tabs/CourtTab.vue", import.meta.url), "utf8");
     const probation = readFileSync(new URL("../src/components/tabs/ProbationTab.vue", import.meta.url), "utf8");
     const indicatorBuilder = readFileSync(new URL("../src/pages/IndicatorCatalogPage.vue", import.meta.url), "utf8");
-    expect(header).toContain('<div class="verdict-header__result">');
+    expect(header).toContain('<h1 class="verdict-header__case">');
     expect(header).toContain("Current version {{ store.activeVersion?.evaluationInformed");
     for (const field of ["verdict.threshold", "rawMetrics", "outOfSampleMetrics", "stressedCostMetrics", "parameterTrials", "dataWarnings"]) expect(court).toContain(field);
     for (const field of ["store.replay.comparisons", "store.replay.trades", "Completed probation trades"]) expect(probation).toContain(field);

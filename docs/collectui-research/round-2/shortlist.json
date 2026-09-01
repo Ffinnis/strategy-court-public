@@ -1,0 +1,83 @@
+[
+  {
+    "id": "04-agent-fanout",
+    "label": "Execution diagram",
+    "name": "Sub-Agent Fanout",
+    "height": 890,
+    "lead": "Fine connectors, small colored nodes, and a perfectly aligned result list.",
+    "craft": [
+      [
+        "Composition",
+        "The diagram has room to breathe above a compact list. The white working surface connects both parts without wrapping every row in a box."
+      ],
+      [
+        "Detail",
+        "Hairline curves meet small circular nodes. Color lives in the nodes and their matching states; the frame stays quiet."
+      ],
+      [
+        "Motion",
+        "Moving packets explain the branch and merge. Filled checks replace outlined working states without shifting the layout."
+      ]
+    ],
+    "application": "Use this visual treatment for an expanded run inspector: branch the robustness checks above their exact results. Keep the main runs page flat.",
+    "avoid": "Do not add an agent diagram where a simple sequence is more accurate. Use sentence case and the app\u2019s sans-serif for every label.",
+    "url": "https://collectui.com/designs/ai-agents-ui-design-inspiration/54269511-7c19-4ab8-8f3c-24dea577456b",
+    "source": "https://x.com/jeetnirnejak/status/2092611495448445101",
+    "video": "https://cdn.collectui.com/amplify_video/2092611448656760832/vid/avc1/1924x1518/6mJxttbAXhRaMmnx-optimized.mp4",
+    "fallback": "screenshots/04-agent-fanout-source.jpg"
+  },
+  {
+    "id": "01-sandbox-limits",
+    "label": "Threshold controls",
+    "name": "Sandbox Limits",
+    "height": 980,
+    "lead": "A quiet frame, crisp chart blocks, and one sharply defined warning accent.",
+    "craft": [
+      [
+        "Composition",
+        "Two plots share a baseline and matching geometry. A single inset surface holds the plots and the smaller progress row."
+      ],
+      [
+        "Detail",
+        "Small value handles sit directly on the limit lines. Diagonal hatching makes a breached threshold visible without repainting the panel."
+      ],
+      [
+        "Motion",
+        "The limit line flexes when usage reaches it. The small deformation gives the interaction a tactile response."
+      ]
+    ],
+    "application": "Borrow the direct labels, limit handles, and precise warning treatment for drawdown limits or stress-test tolerances. Keep the numerical threshold fixed and explicit.",
+    "avoid": "Do not bend financial data or threshold geometry. Apply any spring response to a handle or halo instead. Respect reduced motion.",
+    "url": "https://collectui.com/designs/modal-ui-design-inspiration/e3f1230d-4674-4076-91ee-54599eed8080",
+    "source": "https://x.com/jeetnirnejak/status/2090063252571279840",
+    "video": "https://cdn.collectui.com/amplify_video/2090063142449819649/vid/avc1/1924x1518/n7xu8vxAXIDFivHT-optimized.mp4",
+    "fallback": "screenshots/01-sandbox-limits-source.jpg"
+  },
+  {
+    "id": "03-life-in-weeks",
+    "label": "Data texture",
+    "name": "Life in Weeks",
+    "height": 830,
+    "lead": "Hundreds of tiny marks create one coherent visual, with remarkably little surrounding chrome.",
+    "craft": [
+      [
+        "Composition",
+        "The matrix is the dominant object. Its legend, three summaries, and slider sit on clear horizontal alignments below it."
+      ],
+      [
+        "Detail",
+        "Uniform cell spacing creates texture. The current position is distinct, while unfilled cells recede into a very pale grid."
+      ],
+      [
+        "Motion",
+        "A short cascade fills the cells instead of changing the whole matrix at once. The movement follows the structure of the data."
+      ]
+    ],
+    "application": "Use the cell rhythm and restrained framing for a parameter-stability matrix. Every cell needs a real tested combination, labeled axes, and a readable value on focus.",
+    "avoid": "Do not copy its age semantics or decorative gradient. Choose a meaningful, accessible scale and pair color with values and a legend.",
+    "url": "https://collectui.com/designs/infographic-ui-design-inspiration/0b5c413e-fb9b-4928-a620-f6c4cc66081f",
+    "source": "https://x.com/jeetnirnejak/status/2088251238530105638",
+    "video": "https://cdn.collectui.com/amplify_video/2088251173124046848/vid/avc1/1924x1518/CXPo2_3NzQ2njWQG-optimized.mp4",
+    "fallback": "screenshots/03-life-in-weeks-source.jpg"
+  }
+]

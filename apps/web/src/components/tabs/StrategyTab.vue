@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, reactive, ref } from "vue";
-import { Braces, Check, ChevronDown, Clock3, LockKeyhole, Shield } from "lucide-vue-next";
+import { ArrowRight, Braces, Check, ChevronDown, LockKeyhole } from "lucide-vue-next";
+import DraftRuleAdjustments from "@/components/DraftRuleAdjustments.vue";
 import FormSelect from "@/components/forms/FormSelect.vue";
 import { useCourtStore } from "@/stores/court";
 import ManualExpressionField from "./ManualExpressionField.vue";
@@ -302,13 +303,14 @@ async function createManualDraft() {
     <section class="strategy-overview" aria-labelledby="strategy-interpretation-title">
       <header class="strategy-overview__header">
         <div class="strategy-overview__copy">
-          <span class="eyebrow">{{ store.confirmed ? `Immutable version ${versionNumber}` : "Your approval is required" }}</span>
-          <h2 id="strategy-interpretation-title">{{ store.confirmed ? "Strategy interpretation confirmed" : "Confirm what the engine will test" }}</h2>
+          <span class="eyebrow">{{ store.confirmed ? `Confirmed · Version ${versionNumber}` : "Your approval is required" }}</span>
+          <h2 id="strategy-interpretation-title">{{ store.confirmed ? "Trading rules" : "Confirm what the engine will test" }}</h2>
           <p>{{ store.activeVersion.interpretation }}</p>
         </div>
-        <span class="pill" :class="store.confirmed ? 'pill--pass' : 'pill--warning'"><span class="pill__dot" />{{ store.confirmed ? "Confirmed" : "Draft" }}</span>
+        <button v-if="store.confirmed" class="button button--secondary" type="button" @click="store.activeTab = 'court'">{{ store.courtComplete ? 'View results' : 'Continue to test' }} <ArrowRight :size="14" /></button>
       </header>
 
+      <DraftRuleAdjustments />
       <div class="rule-ledger" aria-label="Trading rules">
         <section v-for="group in [{ id: 'entry', label: 'Entry', description: 'Open a position when', rows: entryRows, count: entryCount }, { id: 'exit', label: 'Exit', description: 'Close the position when', rows: exitRows, count: exitCount }]" :key="group.id" class="rule-section">
           <header class="rule-section__header">
@@ -335,6 +337,11 @@ async function createManualDraft() {
         </section>
       </div>
 
+      <dl class="risk-summary" aria-label="Risk limits">
+        <div><dt>Stop loss</dt><dd>{{ store.activeVersion.definition.risk.stopLossPercent == null ? 'Not set' : `${store.activeVersion.definition.risk.stopLossPercent}%` }}</dd></div>
+        <div><dt>Take profit</dt><dd>{{ store.activeVersion.definition.risk.takeProfitPercent == null ? 'Not set' : `${store.activeVersion.definition.risk.takeProfitPercent}%` }}</dd></div>
+        <div><dt>Maximum holding period</dt><dd>{{ store.activeVersion.definition.risk.maxHoldingDays == null ? 'Not set' : `${store.activeVersion.definition.risk.maxHoldingDays} trading days` }}</dd></div>
+      </dl>
       <div v-if="!store.confirmed" class="approval-actions">
         <div><LockKeyhole :size="15" /><span>Confirmation locks this version for testing. Later changes create a new version.</span></div>
         <button class="button" type="button" :disabled="store.mutating" @click="store.confirmStrategy()"><Check :size="16" />{{ store.mutating ? "Confirming" : "Confirm this interpretation" }}</button>
@@ -342,8 +349,8 @@ async function createManualDraft() {
     </section>
 
     <div class="strategy-detail-grid">
-      <section class="strategy-detail">
-        <header class="strategy-detail__header"><div><h3>Execution and risk</h3><p>These assumptions are part of the reproducible result.</p></div><Shield :size="17" class="subtle" /></header>
+      <details class="strategy-detail" :open="!store.confirmed">
+        <summary class="execution-summary"><span>Execution assumptions</span><small>Fills, sizing and costs</small><ChevronDown :size="15" /></summary>
         <dl class="detail-list">
           <div><dt>Universe</dt><dd>{{ store.activeVersion.definition.universe.join(" · ") }}</dd></div>
           <div><dt>Direction</dt><dd>{{ store.activeVersion.definition.direction }}</dd></div>
@@ -355,14 +362,12 @@ async function createManualDraft() {
           <div><dt>Starting capital</dt><dd>${{ store.currentCase?.initialCapital.toLocaleString() }}</dd></div>
           <div><dt>Transaction costs</dt><dd>{{ store.activeVersion.definition.costs.commissionBpsPerSide }} bps commission · {{ store.activeVersion.definition.costs.slippageBpsPerSide }} bps slippage per side</dd></div>
         </dl>
-      </section>
+      </details>
 
       <section class="structured-definition">
         <button class="definition-toggle" type="button" :aria-expanded="showJson" @click="showJson = !showJson"><span><Braces :size="16" /><span><strong>Structured definition</strong><small>Strict JSON used by the engine</small></span></span><ChevronDown :size="16" :class="{ rotated: showJson }" /></button>
         <div v-if="showJson" class="definition-json"><pre>{{ definitionJson }}</pre></div>
-        <div v-else class="definition-summary">
-          <div><span>{{ entryCount }}</span> entry conditions</div><div><span>{{ exitCount }}</span> exit conditions</div><div><span>{{ Object.keys(store.activeVersion.definition.risk).length }}</span> risk controls</div><div><Clock3 :size="14" /> Next-open fills</div>
-        </div>
+
       </section>
     </div>
   </div>
@@ -373,4 +378,17 @@ async function createManualDraft() {
 .strategy-stack{display:block}.strategy-overview{border-top:1px solid rgba(255,255,255,.1)}.strategy-overview__header{display:flex;align-items:flex-start;justify-content:space-between;gap:32px;padding:32px 0 28px}.strategy-overview__copy{max-width:820px}.strategy-overview__copy .eyebrow{margin-bottom:8px}.strategy-overview__copy h2{margin:0;font-size:28px;letter-spacing:-.04em}.strategy-overview__copy p{max-width:760px;margin:10px 0 0;color:#a0a09a;font-size:14px;line-height:1.65}.strategy-overview__header>.pill{flex:none;margin-top:1px}.rule-ledger{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));border-top:1px solid rgba(255,255,255,.085)}.rule-section{min-width:0;padding:28px 32px 30px}.rule-section:first-child{padding-left:0}.rule-section+ .rule-section{padding-right:0;border-left:1px solid rgba(255,255,255,.075)}.rule-section__header{display:flex;align-items:flex-start;justify-content:space-between;gap:20px}.rule-section__header h3{margin:0;font-size:17px;letter-spacing:-.02em}.rule-section__header p{margin:5px 0 0;color:#7f7f79;font-size:12px}.rule-section__header>span{color:#74746f;font-size:11px}.condition-tree{display:grid;margin-top:23px;border-top:1px solid rgba(255,255,255,.065)}.condition-row{display:grid;grid-template-columns:72px minmax(0,1fr);align-items:center;gap:10px;min-height:44px;padding-block:9px;border-bottom:1px solid rgba(255,255,255,.055)}.condition-row__prefix{display:flex;align-items:center;gap:6px;min-width:0}.condition-join{color:#777772;font-size:11px}.condition-logic{display:inline-flex;min-height:23px;align-items:center;padding:0 7px;border:1px solid #343434;border-radius:7px;color:#c2c2bd;background:#161616;font-size:11px;font-weight:600}.condition-row p{min-width:0;margin:0;color:#a2a29d;font-size:13px;line-height:1.55}.condition-row--group p{color:#8c8c86}.condition-comparison{display:flex;flex-wrap:wrap;gap:4px 6px}.condition-comparison strong{color:#e4e4e1;font-weight:600}.condition-comparison span{color:#888883}.approval-actions{display:flex;align-items:center;justify-content:space-between;gap:24px;padding:20px 0;border-top:1px solid rgba(255,255,255,.085)}.approval-actions>div{display:flex;align-items:center;gap:8px;color:#85857f;font-size:12px}.strategy-detail-grid{display:grid;grid-template-columns:minmax(0,1.2fr) minmax(320px,.8fr);border-top:1px solid rgba(255,255,255,.1);border-bottom:1px solid rgba(255,255,255,.1)}.strategy-detail,.structured-definition{min-width:0;padding:30px 32px 32px}.strategy-detail{padding-left:0}.structured-definition{padding-right:0;border-left:1px solid rgba(255,255,255,.075)}.strategy-detail__header{display:flex;align-items:flex-start;justify-content:space-between;gap:20px}.strategy-detail__header h3{margin:0;font-size:17px;letter-spacing:-.02em}.strategy-detail__header p{margin:5px 0 0;color:#7f7f79;font-size:12px;line-height:1.5}.detail-list{margin:19px 0 0}.detail-list div{display:grid;grid-template-columns:140px minmax(0,1fr);gap:20px;padding:12px 0;border-bottom:1px solid rgba(255,255,255,.055);font-size:12px}.detail-list div:last-child{border:0}.detail-list dt{color:#74746f}.detail-list dd{margin:0;color:#c2c2bd;font-weight:500;line-height:1.5}.definition-toggle{display:flex;width:100%;min-height:48px;align-items:center;justify-content:space-between;padding:0;border:0;color:#daddda;background:transparent;cursor:pointer}.definition-toggle>span{display:flex;align-items:center;gap:11px;text-align:left}.definition-toggle>span>svg{color:#d4d4d1}.definition-toggle strong,.definition-toggle small{display:block}.definition-toggle strong{font-size:14px}.definition-toggle small{margin-top:4px;color:#74746f;font-size:11px;font-weight:400}.definition-toggle>svg{color:#74746f;transition:transform 160ms ease}.definition-toggle>svg.rotated{transform:rotate(180deg)}.definition-json{max-height:400px;overflow:auto;margin-top:18px;border-top:1px solid rgba(255,255,255,.065);background:#0d0d0d}.definition-json pre{margin:0;padding:17px 0;color:#a1a1aa;font:11px/1.65 ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,monospace;white-space:pre-wrap}.definition-summary{display:grid;grid-template-columns:1fr 1fr;margin-top:18px;border-top:1px solid rgba(255,255,255,.065)}.definition-summary div{display:flex;align-items:center;gap:7px;padding:13px 0;color:#82827c;font-size:11px}.definition-summary div:nth-child(even){padding-left:18px;border-left:1px solid rgba(255,255,255,.055)}.definition-summary span{color:#e4e4e1;font-size:12px;font-weight:650}
 @media(max-width:900px){.rule-ledger,.strategy-detail-grid{grid-template-columns:1fr}.rule-section{padding-inline:0}.rule-section+ .rule-section{border-top:1px solid rgba(255,255,255,.075);border-left:0}.strategy-detail,.structured-definition{padding-inline:0}.structured-definition{border-top:1px solid rgba(255,255,255,.075);border-left:0}.approval-actions{align-items:flex-start;flex-direction:column}.detail-list div{grid-template-columns:1fr;gap:4px}}
 @media(max-width:520px){.strategy-overview__header{align-items:flex-start;flex-direction:column;gap:18px;padding-block:25px}.strategy-overview__copy h2{font-size:24px}.rule-section__header{align-items:flex-end}.condition-row{grid-template-columns:60px minmax(0,1fr)}.approval-actions .button{width:100%}.definition-summary{grid-template-columns:1fr}.definition-summary div:nth-child(even){padding-left:0;border-left:0}.definition-summary div+div{border-top:1px solid rgba(255,255,255,.045)}}
+
+.strategy-stack, .manual-draft { width: 100%; margin-inline: auto; }
+.strategy-overview { border-top: 0; }
+.strategy-overview__header { align-items: flex-start; padding-top: 0; }
+.strategy-overview__header > .button { flex-shrink: 0; }
+.strategy-detail-grid { display: block; }
+.execution-summary { display: flex; align-items: center; gap: 18px; padding: 20px 0; font-size: 13px; color: #c1c1ca; cursor: pointer; list-style: none; }
+.execution-summary::-webkit-details-marker { display: none; }
+.execution-summary small { margin-left: auto; font-size: 11px; color: #8e8e9a; }
+.execution-summary svg { transition: transform var(--duration-control); }.strategy-detail[open] .execution-summary svg { transform: rotate(180deg); }
+.risk-summary { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 24px; margin: 0; padding: 22px 0; border-block: 1px solid #292929; }
+.risk-summary dt { color: #8f8f9b; font-size: 12px; }.risk-summary dd { margin: 8px 0 0; font-size: 15px; color: #d0d0da; }
+@media(max-width:720px) { .risk-summary { grid-template-columns: 1fr; gap: 16px; }.risk-summary > div { display: flex; justify-content: space-between; align-items: center; gap: 14px; }.risk-summary dd { margin: 0; }.execution-summary small { display: none; }.execution-summary svg { margin-left: auto; } }
 </style>

@@ -1,6 +1,8 @@
 <script setup lang="ts">
-import { computed, onMounted, ref, watch } from "vue";
-import { ArrowRight, LockKeyhole, ShieldAlert, TriangleAlert } from "lucide-vue-next";
+import { computed, nextTick, onMounted, ref, watch } from "vue";
+import { ArrowLeft, ArrowRight, LockKeyhole, ShieldAlert, TriangleAlert } from "lucide-vue-next";
+import ComparisonPanel from "@/components/ComparisonPanel.vue";
+import ParameterDial from "@/components/forms/ParameterDial.vue";
 import FormSelect from "@/components/forms/FormSelect.vue";
 import StatusBadge from "@/components/StatusBadge.vue";
 import { useCourtStore } from "@/stores/court";
@@ -37,6 +39,7 @@ const summaryMetrics: Array<{ key: SummaryMetric; label: string }> = [
 
 const store = useCourtStore();
 const selected = ref("");
+const showComposer = ref(store.variants.length === 0);
 const selectedChange = ref("");
 const candidateValue = ref<string | number>("");
 const hypothesis = ref("");
@@ -46,7 +49,7 @@ const rationaleOverride = ref("");
 const draftError = ref("");
 
 const hasCompletedCourtRecord = computed(() => Boolean(store.variantParentResult));
-const rows = computed(() => store.comparison?.versions ?? []);
+const rows = computed(() => [...(store.comparison?.versions ?? [])].sort((a,b) => (store.currentCase?.versions.findIndex(v=>v.id===a.versionId) ?? 0) - (store.currentCase?.versions.findIndex(v=>v.id===b.versionId) ?? 0)));
 const baselineRow = computed(() => rows.value.find((item) => item.versionId === store.variantParentVersion?.id));
 const variantRows = computed(() => rows.value.filter((item) => item.parentVersionId === baselineRow.value?.versionId));
 const selectedRow = computed(() => variantRows.value.find((item) => item.versionId === selected.value) ?? variantRows.value[0]);
@@ -103,8 +106,14 @@ const probationReason = computed(() => store.probationCandidate
   : "No version has an eligible completed Court result.");
 const variantOptions = computed(() => variantRows.value.map((row, index) => {
   const version = store.currentCase?.versions.find((item) => item.id === row.versionId);
-  return { value: row.versionId, label: `Version ${version?.versionNumber ?? index + 2} · ${row.name}` };
+  return { value: row.versionId, label: `Version ${version?.versionNumber ?? index + 2}`, description: version?.hypothesis || row.name };
 }));
+
+async function toggleComposer(open: boolean) {
+  showComposer.value = open;
+  await nextTick();
+  document.getElementById(open ? "variant-builder-title" : "variant-create")?.focus();
+}
 
 function runFor(id: string) {
   return store.currentCase?.runs.find((item) => item.versionId === id);
@@ -135,6 +144,8 @@ function buildPatch(key: string, value: number): Record<string, unknown> {
   return { [scope]: withIndicatorPeriod(definition[scope], Number(match[2]), value) };
 }
 
+const dialMinimum = computed(() => Math.min(numericCandidate.value ?? Infinity,Math.max(selectedConfig.value.min,Math.floor((currentValue(selectedChange.value) ?? selectedConfig.value.min)*.5))));
+const dialMaximum = computed(() => Math.max(numericCandidate.value ?? -Infinity,Math.min(selectedConfig.value.max,Math.ceil(Math.max(currentValue(selectedChange.value) ?? 1,1)*1.5))));
 const patch = computed(() => numericCandidate.value == null ? null : buildPatch(selectedChange.value, numericCandidate.value));
 const patchPreview = computed(() => patch.value ? JSON.stringify(patch.value, null, 2) : "Enter a value to preview the rule change.");
 const defaultName = computed(() => {
@@ -190,6 +201,8 @@ async function submitVariant() {
   const validationError = validateDraft();
   if (validationError) {
     draftError.value = validationError;
+    await nextTick();
+    document.getElementById(numericCandidate.value == null || numericCandidate.value < selectedConfig.value.min || numericCandidate.value > selectedConfig.value.max || (selectedConfig.value.integer && !Number.isInteger(numericCandidate.value)) || currentValue(selectedChange.value) === numericCandidate.value ? "variant-value" : "variant-hypothesis")?.focus();
     return;
   }
   const structuredPatch = patch.value;
@@ -207,8 +220,13 @@ async function submitVariant() {
   }
   selected.value = created.at(-1) ?? selected.value;
   resetBuilder();
+  showComposer.value = false;
+  await nextTick();
+  document.getElementById("variant-results-title")?.focus();
+  window.scrollTo({ top: 0, behavior: "auto" });
 }
 
+watch(remainingSlots, (remaining) => { if (!remaining) showComposer.value = false; });
 watch(selectedChange, () => {
   candidateValue.value = "";
   draftError.value = "";
@@ -217,7 +235,9 @@ watch(changeOptions, (options) => {
   if (!options.some((option) => option.value === selectedChange.value)) selectedChange.value = options[0]?.value ?? "maxHoldingDays";
 }, { immediate: true });
 watch(variantRows, (next) => {
-  if (!next.some((item) => item.versionId === selected.value)) selected.value = next[0]?.versionId ?? "";
+  if (!next.some((item) => item.versionId === selected.value)) {
+    selected.value = next.find(item => item.versionId === store.activeVersion?.id)?.versionId ?? next[0]?.versionId ?? "";
+  }
 }, { immediate: true });
 onMounted(() => {
   if (store.variants.length) void store.loadComparison();
@@ -235,11 +255,12 @@ onMounted(() => {
   </div>
 
   <div v-else class="variant-workspace">
-    <section v-if="remainingSlots" class="variant-composer" aria-labelledby="variant-builder-title">
+    <section v-if="showComposer && remainingSlots" class="variant-composer" aria-labelledby="variant-builder-title">
       <header class="composer-heading">
+        <button v-if="store.variants.length" class="composer-back" type="button" @click="toggleComposer(false)"><ArrowLeft :size="14" />Back to comparison</button>
         <div>
           <span class="pill"><span class="pill__dot" />{{ remainingSlots }} {{ remainingSlots === 1 ? "attempt" : "attempts" }} left</span>
-          <h2 id="variant-builder-title">Try one change</h2>
+          <h2 id="variant-builder-title" tabindex="-1">Try one change</h2>
           <p>Keep every other rule locked so the result is easy to read.</p>
         </div>
       </header>
@@ -268,13 +289,17 @@ onMounted(() => {
                 :max="selectedConfig.max"
                 :step="selectedConfig.step"
                 :placeholder="String(currentValue(selectedChange) ?? selectedConfig.min)"
-                aria-describedby="variant-current-value"
+                :aria-invalid="Boolean(draftError)"
+                aria-describedby="variant-current-value variant-error"
               />
               <span aria-hidden="true">{{ selectedConfig.unit }}</span>
             </div>
             <small id="variant-current-value">Current: {{ formatSetting(currentValue(selectedChange)) }}</small>
           </label>
         </div>
+        <details class="dial-disclosure"><summary>Adjust with a dial</summary>
+        <div class="parameter-adjustment"><ParameterDial :model-value="numericCandidate ?? currentValue(selectedChange) ?? selectedConfig.min" :min="dialMinimum" :max="dialMaximum" :step="selectedConfig.step" :label="selectedConfig.label" :unit="selectedConfig.unit" :disabled="store.mutating" @update:model-value="candidateValue = $event" /><div><span>Proposed change</span><strong>{{ formatSetting(currentValue(selectedChange)) }} <span aria-hidden="true">→</span> {{ numericCandidate === null ? 'Choose a value' : formatSetting(numericCandidate) }}</strong><p>Use the slider or type an exact value above. The baseline remains locked.</p></div></div>
+        </details>
 
         <label class="field expected-field" for="variant-hypothesis">
           <span>Expected outcome</span>
@@ -283,6 +308,8 @@ onMounted(() => {
             v-model="hypothesis"
             class="input"
             maxlength="500"
+            :aria-invalid="Boolean(draftError && !hypothesis.trim())"
+            aria-describedby="variant-error"
             placeholder="For example: reduce the longest losing trades without materially lowering return."
           />
         </label>
@@ -310,7 +337,7 @@ onMounted(() => {
         </details>
 
         <div class="composer-actions">
-          <p v-if="draftError || store.error" role="alert">{{ draftError || store.error }}</p>
+          <p id="variant-error" v-if="draftError || store.error" role="alert">{{ draftError || store.error }}</p>
           <button class="button" type="submit" :disabled="store.mutating">
             {{ store.mutating ? "Running Court…" : "Run variant" }} <ArrowRight :size="15" />
           </button>
@@ -318,27 +345,21 @@ onMounted(() => {
       </form>
     </section>
 
-    <section v-if="store.variants.length === 0" class="variant-intro">
+    <section v-if="showComposer && store.variants.length === 0" class="variant-intro">
       <ShieldAlert :size="18" />
       <p>Each attempt stays in the investigation record, including failed runs.</p>
     </section>
 
-    <section v-else class="variant-results" aria-labelledby="variant-results-title">
+    <section v-if="!showComposer" class="variant-results" aria-labelledby="variant-results-title">
       <header class="results-heading">
         <div>
-          <p class="eyebrow">{{ comparisonState }}</p>
-          <h2 id="variant-results-title">Baseline vs selected variant</h2>
+          <h2 id="variant-results-title" tabindex="-1">Compare versions</h2>
+          <p>Each change is measured against the same locked baseline.</p>
         </div>
-        <button
-          class="button button--secondary"
-          type="button"
-          :disabled="store.mutating || !store.probationCandidate"
-          :title="probationReason"
-          @click="store.startReplay(store.probationCandidate?.id)"
-        >
-          Start probation <ArrowRight :size="15" />
-        </button>
+        <button v-if="remainingSlots" id="variant-create" class="button" type="button" @click="toggleComposer(true)">Test a change <ArrowRight :size="15" /></button>
+        <span v-else class="budget-note">All three attempts recorded</span>
       </header>
+      <div v-if="!selectedRow" class="comparison-pending" role="status"><p>{{ comparisonState }}</p><button v-if="!store.comparisonLoading" class="button button--secondary" type="button" @click="store.loadComparison()">Refresh comparison</button></div>
 
       <div v-if="selectedRow" class="selection-row">
         <label class="field" for="variant-result-select">
@@ -356,24 +377,8 @@ onMounted(() => {
         </div>
       </div>
 
-      <div v-if="selectedRow" class="selected-summary">
-        <div class="selected-summary__copy">
-          <h3>{{ selectedRow.name }}</h3>
-          <p>{{ selectedVersion?.hypothesis || "No expected outcome was recorded." }}</p>
-        </div>
-        <div class="summary-table-wrap">
-          <table aria-label="Baseline and selected variant metrics">
-            <thead><tr><th>Measure</th><th>Baseline</th><th>Variant</th></tr></thead>
-            <tbody>
-              <tr v-for="item in summaryMetrics" :key="item.key">
-                <th>{{ item.label }}</th>
-                <td>{{ metric(baselineRow, item.key) }}</td>
-                <td>{{ metric(selectedRow, item.key) }}</td>
-              </tr>
-            </tbody>
-          </table>
-        </div>
-      </div>
+      <ComparisonPanel v-if="selectedRow" :baseline="baselineRow" :variant="selectedRow" :baseline-label="store.variantParentVersion?.versionNumber ? `Baseline · v${store.variantParentVersion.versionNumber}` : 'Baseline'" :variant-label="selectedVersion?.versionNumber ? `Version ${selectedVersion.versionNumber}` : 'Variant'" :period="`${store.currentCase?.startDate} to ${store.currentCase?.endDate}`" />
+      <p v-if="selectedRow" class="comparison-caption">{{ comparisonState }} · Attempts stay in creation order, including failures.</p>
 
       <details class="analysis-details">
         <summary>
@@ -397,9 +402,10 @@ onMounted(() => {
 
       <details v-if="selectedRow" class="analysis-details">
         <summary>
-          <span>Exact rule changes</span>
+          <span>Hypothesis and rule changes</span>
           <small>{{ selectedRow.diffs.length }} {{ selectedRow.diffs.length === 1 ? "change" : "changes" }}</small>
         </summary>
+        <div class="selected-summary__copy"><h3>{{ selectedRow.name }}</h3><p>{{ selectedVersion?.hypothesis || "No expected outcome was recorded." }}</p></div>
         <div v-if="selectedRow.diffs.length" class="diff-lines">
           <div v-for="diff in selectedRow.diffs" :key="diff.path" class="diff-line">
             <code>{{ diff.path }}</code>
@@ -410,12 +416,37 @@ onMounted(() => {
         <div v-else class="mini-empty">No structured difference was returned.</div>
       </details>
 
+      <div class="comparison-next"><p>{{ remainingSlots }} {{ remainingSlots === 1 ? 'attempt' : 'attempts' }} remaining</p><button class="button button--quiet" type="button" :disabled="!store.probationCandidate" :title="probationReason" @click="store.activeTab = 'probation'">Review replay eligibility <ArrowRight :size="14" /></button></div>
       <p v-if="remainingSlots === 0" class="budget-note"><ShieldAlert :size="14" /> All three attempts are preserved in the record.</p>
     </section>
   </div>
 </template>
 
 <style scoped lang="scss">
-.variant-workspace{display:grid;width:100%;gap:52px}.variant-composer{width:100%;max-width:none}.composer-heading h2,.results-heading h2{margin:13px 0 0;font-size:34px;letter-spacing:-.045em}.composer-heading p{margin:9px 0 0;color:#8d8d92;font-size:13px}.composer-form{display:grid;gap:22px;margin-top:28px;padding:26px 0;border-top:1px solid rgba(255,255,255,.085);border-bottom:1px solid rgba(255,255,255,.085)}.change-grid{display:grid;grid-template-columns:minmax(0,1fr) 250px;gap:14px}.field{display:grid;align-content:start;gap:8px;min-width:0}.field>span,.patch-preview>span{color:#bebec3;font-size:12px;font-weight:600}.field>span small{margin-left:5px;color:#6f6f75;font-size:10px;font-weight:500}.field>small{color:#75757a;font-size:10px}.value-control{position:relative}.value-control .input{width:100%;padding-right:58px}.value-control>span{position:absolute;top:50%;right:14px;color:#77777d;font-size:11px;pointer-events:none;transform:translateY(-50%)}.expected-field textarea{min-height:88px;resize:vertical}.advanced-fields{border-top:1px solid rgba(255,255,255,.065)}.advanced-fields summary,.analysis-details summary{cursor:pointer;list-style-position:outside}.advanced-fields summary{width:max-content;padding-top:17px;color:#9d9da2;font-size:12px;font-weight:600}.advanced-grid{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-top:18px}.advanced-rationale,.patch-preview{grid-column:1/-1}.advanced-rationale textarea{min-height:74px;resize:vertical}.patch-preview{display:grid;gap:8px}.patch-preview pre{min-height:76px;margin:0;padding:14px;border:1px solid #2b2b2d;border-radius:10px;color:#a9a9ae;background:#101011;box-shadow:inset 0 1px 0 rgba(255,255,255,.025);font:11px/1.55 ui-monospace,SFMono-Regular,Menlo,monospace;white-space:pre-wrap}.composer-actions{display:flex;min-height:46px;align-items:center;justify-content:flex-end;gap:18px}.composer-actions p{margin:0;color:#c7a5a0;font-size:11px}.variant-intro{display:flex;align-items:center;gap:10px;padding:18px 0;border-top:1px solid rgba(255,255,255,.075);color:#888;font-size:12px}.variant-intro p{margin:0}.variant-results{display:grid;gap:24px;padding-top:34px;border-top:1px solid rgba(255,255,255,.085)}.results-heading{display:flex;align-items:flex-end;justify-content:space-between;gap:24px}.results-heading h2{font-size:28px}.selection-row{display:flex;align-items:end;justify-content:space-between;gap:18px}.selection-row>.field{width:min(100%,430px)}.selection-context{display:flex;align-items:center;gap:12px;padding-bottom:5px}.selection-context>span{display:flex;align-items:center;gap:6px;color:#85858b;font-size:10px}.selected-summary{display:grid;grid-template-columns:minmax(220px,.55fr) minmax(420px,1fr);gap:42px;padding:24px 0;border-top:1px solid rgba(255,255,255,.07);border-bottom:1px solid rgba(255,255,255,.07)}.selected-summary__copy h3{margin:0;font-size:18px}.selected-summary__copy p{margin:8px 0 0;color:#88888e;font-size:12px;line-height:1.55}.summary-table-wrap,.comparison-table-wrap{min-width:0;overflow-x:auto}.summary-table-wrap table,.comparison-table-wrap table{width:100%;border-collapse:collapse}.summary-table-wrap th,.summary-table-wrap td,.comparison-table-wrap th,.comparison-table-wrap td{padding:11px 12px;border-top:1px solid rgba(255,255,255,.06);font-size:11px;text-align:left}.summary-table-wrap thead th,.comparison-table-wrap thead th{padding-top:0;border-top:0;color:#737378;font-size:10px;font-weight:600}.summary-table-wrap tbody th,.comparison-table-wrap tbody th{color:#929298;font-weight:500}.summary-table-wrap td:last-child{color:#f0f0f2;font-weight:650}.analysis-details{border-top:1px solid rgba(255,255,255,.075)}.analysis-details summary{display:flex;align-items:center;justify-content:space-between;gap:16px;padding:17px 2px;color:#d1d1d4;font-size:13px;font-weight:650}.analysis-details summary small{color:#74747a;font-size:10px;font-weight:500}.comparison-table-wrap{padding:5px 0 14px}.comparison-table-wrap table{min-width:760px}.version-head{display:grid;gap:4px;color:#b8b8bc}.version-head small{color:#6f6f74;font-size:9px}.diff-lines{padding-bottom:14px}.diff-line{display:grid;grid-template-columns:minmax(130px,.6fr) 1fr 1fr;gap:14px;padding:10px 2px;border-top:1px solid rgba(255,255,255,.055);color:#85858b;font:10px/1.5 ui-monospace,SFMono-Regular,Menlo,monospace}.diff-line code{color:#d4d4d7}.diff-line strong{color:#efeff1}.mini-empty{padding:22px 0;color:#77777c;font-size:11px}.budget-note{display:flex;align-items:center;gap:8px;margin:0;color:#7f7f84;font-size:11px}
+.parameter-adjustment { display:flex;align-items:center;gap:30px;padding:10px 0; }
+.parameter-adjustment>div { display:grid;gap:12px; }
+.parameter-adjustment>div>span { color:#8d8d94;font-size:11px; }
+.parameter-adjustment strong { font-size:22px;font-weight:550;color:#e7e7ea;font-variant-numeric:tabular-nums; }
+.parameter-adjustment strong span { margin:0 12px;color:#777; }
+.parameter-adjustment p { max-width:330px;margin:0;font-size:12px;line-height:1.7;color:#8f8f96; }
+@media(max-width:520px) { .parameter-adjustment{gap:20px;align-items:start;} .parameter-adjustment strong{font-size:16px;} }
+
+.variant-workspace{display:grid;width:100%;gap:52px}.variant-composer{width:100%;max-width:none}.composer-heading h2,.results-heading h2{margin:13px 0 0;font-size:34px;letter-spacing:-.045em}.composer-heading p{margin:9px 0 0;color:#8d8d92;font-size:13px}.composer-form{display:grid;gap:22px;margin-top:28px;padding:26px 0;border-top:1px solid rgba(255,255,255,.085);border-bottom:1px solid rgba(255,255,255,.085)}.change-grid{display:grid;grid-template-columns:minmax(0,1fr) 250px;gap:14px}.field{display:grid;align-content:start;gap:8px;min-width:0}.field>span,.patch-preview>span{color:#bebec3;font-size:12px;font-weight:600}.field>span small{margin-left:5px;color:#6f6f75;font-size:10px;font-weight:500}.field>small{color:#75757a;font-size:10px}.value-control{position:relative}.value-control .input{width:100%;padding-right:58px}.value-control>span{position:absolute;top:50%;right:14px;color:#77777d;font-size:11px;pointer-events:none;transform:translateY(-50%)}.expected-field textarea{min-height:88px;resize:vertical}.advanced-fields{border-top:1px solid rgba(255,255,255,.065)}.advanced-fields summary,.analysis-details summary{cursor:pointer;list-style-position:outside}.advanced-fields summary{width:max-content;padding-top:17px;color:#9d9da2;font-size:12px;font-weight:600}.advanced-grid{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-top:18px}.advanced-rationale,.patch-preview{grid-column:1/-1}.advanced-rationale textarea{min-height:74px;resize:vertical}.patch-preview{display:grid;gap:8px}.patch-preview pre{min-height:76px;margin:0;padding:14px;border:1px solid #2b2b2d;border-radius:10px;color:#a9a9ae;background:#101011;box-shadow:inset 0 1px 0 rgba(255,255,255,.025);font:11px/1.55 ui-monospace,SFMono-Regular,Menlo,monospace;white-space:pre-wrap}.composer-actions{display:flex;min-height:46px;align-items:center;justify-content:flex-end;gap:18px}.composer-actions p{margin:0;color:#c7a5a0;font-size:11px}.variant-intro{display:flex;align-items:center;gap:10px;padding:18px 0;border-top:1px solid rgba(255,255,255,.075);color:#888;font-size:12px}.variant-intro p{margin:0}.variant-results{display:grid;gap:24px;padding-top:34px;border-top:1px solid rgba(255,255,255,.085)}.results-heading{display:flex;align-items:flex-end;justify-content:space-between;gap:24px}.results-heading h2{font-size:28px}.selection-row{display:flex;align-items:end;justify-content:space-between;gap:18px}.selection-row>.field{width:min(100%,430px)}.selection-context{display:flex;align-items:center;gap:12px;padding-bottom:5px}.selection-context>span{display:flex;align-items:center;gap:6px;color:#85858b;font-size:10px}.selected-summary{display:grid;grid-template-columns:minmax(180px,.4fr) minmax(540px,1fr);gap:42px;padding:24px 0;border-top:1px solid rgba(255,255,255,.07);border-bottom:1px solid rgba(255,255,255,.07)}.selected-summary__copy h3{margin:0;font-size:18px}.selected-summary__copy p{margin:8px 0 0;color:#88888e;font-size:12px;line-height:1.55}.summary-table-wrap,.comparison-table-wrap{min-width:0;overflow-x:auto}.summary-table-wrap table,.comparison-table-wrap table{width:100%;border-collapse:collapse}.summary-table-wrap th,.summary-table-wrap td,.comparison-table-wrap th,.comparison-table-wrap td{padding:11px 12px;border-top:1px solid rgba(255,255,255,.06);font-size:11px;text-align:left}.summary-table-wrap thead th,.comparison-table-wrap thead th{padding-top:0;border-top:0;color:#737378;font-size:10px;font-weight:600}.summary-table-wrap tbody th,.comparison-table-wrap tbody th{color:#929298;font-weight:500}.summary-table-wrap td:last-child{color:#f0f0f2;font-weight:650}.analysis-details{border-top:1px solid rgba(255,255,255,.075)}.analysis-details summary{display:flex;align-items:center;justify-content:space-between;gap:16px;padding:17px 2px;color:#d1d1d4;font-size:13px;font-weight:650}.analysis-details summary small{color:#74747a;font-size:10px;font-weight:500}.comparison-table-wrap{padding:5px 0 14px}.comparison-table-wrap table{min-width:760px}.version-head{display:grid;gap:4px;color:#b8b8bc}.version-head small{color:#6f6f74;font-size:9px}.diff-lines{padding-bottom:14px}.diff-line{display:grid;grid-template-columns:minmax(130px,.6fr) 1fr 1fr;gap:14px;padding:10px 2px;border-top:1px solid rgba(255,255,255,.055);color:#85858b;font:10px/1.5 ui-monospace,SFMono-Regular,Menlo,monospace}.diff-line code{color:#d4d4d7}.diff-line strong{color:#efeff1}.mini-empty{padding:22px 0;color:#77777c;font-size:11px}.budget-note{display:flex;align-items:center;gap:8px;margin:0;color:#7f7f84;font-size:11px}
 @media(max-width:800px){.variant-workspace{gap:38px}.change-grid,.advanced-grid,.selected-summary{grid-template-columns:1fr}.selected-summary{gap:22px}.results-heading,.selection-row{align-items:stretch;flex-direction:column}.selection-row>.field{width:100%}.selection-context{padding:0}.composer-actions{align-items:stretch;flex-direction:column}.composer-actions .button{width:100%}.diff-line{grid-template-columns:1fr}}
+
+.variant-workspace { width: 100%; margin: 0 auto; gap: 20px; }
+.variant-composer { max-width: 740px; margin: 0 auto; }
+.variant-results { gap: 20px; padding-top: 0; border-top: 0; }
+.results-heading { align-items: center; }
+.results-heading h2 { margin: 0; font-size: 28px; font-weight: 600; }
+.results-heading p { margin: 9px 0 0; color: #93939d; font-size: 13px; line-height: 1.6; }
+.results-heading > .button { flex-shrink: 0; }
+.composer-back { display: inline-flex; align-items: center; gap: 8px; margin-bottom: 24px; padding: 0; border: 0; background: transparent; color: #a5a5b0; font-size: 12px; cursor: pointer; min-height: 30px; }
+.dial-disclosure > summary { color: #aaaab5; font-size: 12px; cursor: pointer; }
+.dial-disclosure .parameter-adjustment { padding-top: 22px; }
+.comparison-caption { margin: -8px 0 0; font-size: 11px; color: #91919d; line-height: 1.6; }
+.selected-summary__copy { padding: 8px 0 20px; }.selected-summary__copy p { max-width: 680px; }
+.comparison-next { display: flex; align-items: center; justify-content: space-between; gap: 20px; border-top: 1px solid #292929; padding-top: 12px; }
+.comparison-next p { color: #93939e; font-size: 11px; }
+@media(max-width:720px) { .results-heading > .button { align-self: flex-start; }.comparison-next { flex-wrap: wrap; gap: 8px; } }
 </style>
