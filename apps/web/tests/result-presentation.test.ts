@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { metricDifference, numericMetric, parameterMatrix, runStageIndex } from "../src/services/resultPresentation";
+import { formatProfitFactor, metricDifference, numericMetric, parameterMatrix, runStageIndex } from "../src/services/resultPresentation";
 import { evidenceLink } from "../src/services/evidenceLink";
 import { useNotifications } from "../src/stores/notifications";
 import { createPinia, setActivePinia } from "pinia";
@@ -21,6 +21,12 @@ describe("honest result presentation", () => {
     expect(metricDifference(null,18,"tradeCount")).toBe("Not available");
     expect(metricDifference(0,0,"netReturnPercent")).toBe("0.0 pp");
     expect(numericMetric({metrics:{profitFactor:Infinity}} as unknown as ComparisonVersion,"profitFactor")).toBeNull();
+  });
+  test("profit factor distinguishes no losses from missing data", () => {
+    expect(formatProfitFactor({ profitFactor: 1.456 })).toBe("1.46");
+    expect(formatProfitFactor({ profitFactor: null, winningTrades: 4, losingTrades: 0 })).toBe("No losing trades");
+    expect(formatProfitFactor({ profitFactor: null, winningTrades: 0, losingTrades: 0 })).toBe("Not reported");
+    expect(formatProfitFactor(undefined)).toBe("Not reported");
   });
   test("matrix only contains actual returned trials and distinguishes invalid, missing and zero", () => {
     const matrix=parameterMatrix([

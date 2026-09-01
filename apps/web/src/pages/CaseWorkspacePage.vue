@@ -138,9 +138,7 @@ watch(() => store.activeTab, settleTabScroll);
       <div class="workspace-layout">
         <section :id="`panel-${store.activeTab}`" class="workspace-content" role="tabpanel" :aria-labelledby="`tab-${store.activeTab}`">
           <button v-if="store.running && store.activeTab !== 'court'" class="active-run-link" @click="store.activeTab = 'court'">Court is running · {{ store.latestRun?.stage?.replaceAll('_', ' ') }} · Open progress</button>
-          <Transition name="workspace-panel" mode="out-in">
-            <KeepAlive :key="caseId" :max="6"><component :is="activeComponent" :key="`${caseId}:${store.activeVersion?.id}:${store.activeTab}`" /></KeepAlive>
-          </Transition>
+          <KeepAlive :max="6"><component :is="activeComponent" :key="`${caseId}:${store.activeVersion?.id}:${store.activeTab}`" /></KeepAlive>
         </section>
       </div>
     </template>

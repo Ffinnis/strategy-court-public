@@ -7,6 +7,7 @@ import ExecutionTrace from "@/components/ExecutionTrace.vue";
 import ParameterMatrix from "@/components/ParameterMatrix.vue";
 import SegmentedControl from "@/components/ui/SegmentedControl.vue";
 import { revealFinding } from "@/services/workspaceNavigation";
+import { formatProfitFactor } from "@/services/resultPresentation";
 import CourtResultChart from "@/charts/CourtResultChart.vue";
 import InvestigationDecision from "@/components/InvestigationDecision.vue";
 import type { DataSnapshotPolicy } from "@strategy-court/schemas";
@@ -77,7 +78,7 @@ const resultKpis = computed(() => {
     },
     {
       label: "Profit factor",
-      value: resultMetric(store.result?.rawMetrics, "profitFactor")?.toFixed(2) ?? "Not reported",
+      value: formatProfitFactor(store.result?.rawMetrics),
       detail: "Gross profits / gross losses",
       tone: "neutral",
     },
@@ -99,6 +100,9 @@ const detailLabel = (value: string) => value.replaceAll(/([a-z])([A-Z])/g, (_, l
 const detailValue = (value: unknown) => typeof value === "number"
   ? value.toLocaleString(undefined, { maximumFractionDigits: 4 })
   : typeof value === "boolean" ? (value ? "Yes" : "No") : value == null ? "Not available" : String(value);
+const metricDetailValue = (key: string, value: unknown, metrics: Record<string, unknown>) => key === "profitFactor"
+  ? formatProfitFactor(metrics)
+  : detailValue(value);
 const metricSections = computed(() => [
   { title: "Baseline", values: store.result?.rawMetrics ?? {} },
   { title: "Untouched evaluation", values: store.result?.outOfSampleMetrics ?? {} },
@@ -225,7 +229,7 @@ const metricSections = computed(() => [
         <div class="metric-detail-grid">
           <section v-for="section in metricSections" :key="section.title">
             <h3>{{ section.title }}</h3>
-            <dl><div v-for="(value,key) in section.values" :key="key"><dt>{{ detailLabel(String(key)) }}</dt><dd>{{ detailValue(value) }}</dd></div></dl>
+            <dl><div v-for="(value,key) in section.values" :key="key"><dt>{{ detailLabel(String(key)) }}</dt><dd>{{ metricDetailValue(String(key), value, section.values) }}</dd></div></dl>
           </section>
         </div>
         <section class="parameter-detail" aria-labelledby="parameter-detail-title">

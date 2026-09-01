@@ -68,6 +68,7 @@ const rangeLabel = computed(() => {
   const last = seriesData.value.bars.at(-1)?.date;
   return first && last ? `${first} to ${last}` : "No range";
 });
+const chartKindLabel = computed(() => viewMode.value === "line" ? "line chart" : "candlestick chart");
 
 const formatPrice = (value: number) => `$${value.toLocaleString(undefined, {
   minimumFractionDigits: 2,
@@ -327,7 +328,7 @@ onBeforeUnmount(destroyChart);
           role="group"
           tabindex="0"
           @keydown="inspectWithKeyboard"
-          :aria-label="`${selectedSymbol} adjusted daily candlestick chart from ${rangeLabel}. Drag to pan, scroll to zoom, or use arrow keys to inspect each bar. Recorded fills are listed below.`"
+          :aria-label="`${selectedSymbol} adjusted daily ${chartKindLabel} from ${rangeLabel}. Drag to pan, scroll to zoom, or use arrow keys to inspect each bar. Recorded fills are listed below.`"
         />
       </div>
       <p class="sr-only" role="status">{{ keyboardAnnouncement }}</p>

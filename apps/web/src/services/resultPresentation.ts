@@ -31,6 +31,15 @@ export function numericMetric(
   const value = key === "tradeCount" ? row?.tradeCount : row?.metrics?.[key];
   return typeof value === "number" && Number.isFinite(value) ? value : null;
 }
+export function formatProfitFactor(
+  metrics: Record<string, unknown> | undefined,
+): string {
+  const value = metrics?.profitFactor;
+  if (typeof value === "number" && Number.isFinite(value)) return value.toFixed(2);
+  return metrics?.losingTrades === 0 && typeof metrics.winningTrades === "number" && metrics.winningTrades > 0
+    ? "No losing trades"
+    : "Not reported";
+}
 export function metricDifference(
   before: number | null,
   after: number | null,

@@ -161,8 +161,8 @@ function moveActive(direction: 1 | -1) {
 function selectOption(index: number) {
   const option = props.options[index];
   if (!option || option.disabled) return;
-  model.value = option.value;
   closeMenu(true);
+  model.value = option.value;
 }
 
 function handleKeydown(event: KeyboardEvent) {
@@ -306,7 +306,7 @@ onBeforeUnmount(() => {
           :data-option-index="index"
           @mousedown.prevent
           @pointermove="!option.disabled && (activeIndex = index)"
-          @click="selectOption(index)"
+          @click.stop="selectOption(index)"
         >
           <span class="form-select__option-copy">{{ option.label }}<small v-if="option.description">{{ option.description }}</small></span>
           <Check v-if="model === option.value" :size="15" :stroke-width="2" aria-hidden="true" />

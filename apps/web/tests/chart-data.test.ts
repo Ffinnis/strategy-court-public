@@ -1,4 +1,5 @@
 import { expect, test } from "bun:test";
+import { readFileSync } from "node:fs";
 import { buildMarketChartSeries } from "../src/charts/marketChartData";
 import type { MarketEvidenceBar, Trade } from "../src/types";
 
@@ -23,4 +24,11 @@ test("builds ordered OHLCV series and exact selected-symbol fill markers", () =>
     expect.objectContaining({ id: "trade-1-entry", time: "2024-01-02", price: 100.25, position: "atPriceMiddle", shape: "arrowUp" }),
     expect.objectContaining({ id: "trade-1-exit", time: "2024-01-03", price: 103.75, position: "atPriceMiddle", shape: "arrowDown" }),
   ]);
+});
+
+test("the evidence chart names the active visual mode", () => {
+  const source = readFileSync(new URL("../src/charts/CandlestickEvidenceChart.vue", import.meta.url), "utf8");
+
+  expect(source).toContain('viewMode.value === "line" ? "line chart" : "candlestick chart"');
+  expect(source).toContain("adjusted daily ${chartKindLabel}");
 });

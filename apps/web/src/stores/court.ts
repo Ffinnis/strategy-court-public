@@ -4,6 +4,7 @@ import { tradeEvidenceId, type DecisionFields, type InvestigationDecision, type 
 import { useEvidenceSelection } from "./evidence";
 import { sampleDefinition, sampleInput } from "@/data/demo";
 import { apiRequest, unwrap, type ApiActor } from "@/services/api";
+import { formatProfitFactor } from "@/services/resultPresentation";
 import type {
   AuditEvent, CaseInput, CourtCase, CourtResult, CourtRun, FailureEvidence, Metric,
   LatestBarMonitoringStatus, MarketEvidence, MarketEvidenceBar, MonitoringChange, MonitoringEvaluation, MonitoringPosition,
@@ -33,7 +34,7 @@ function metricCards(value: unknown): Metric[] {
   if (Object.keys(metrics).length === 0) return [];
   const netReturn = finite(metrics.netReturnPercent);
   const drawdown = finite(metrics.maximumDrawdownPercent);
-  const profitFactor = typeof metrics.profitFactor === "number" ? metrics.profitFactor.toFixed(2) : "No losing trades";
+  const profitFactor = formatProfitFactor(metrics);
   const expectancy = typeof metrics.expectancyPerTrade === "number"
     ? `${metrics.expectancyPerTrade >= 0 ? "+" : "−"}$${Math.abs(metrics.expectancyPerTrade).toLocaleString(undefined, { maximumFractionDigits: 2 })}`
     : "Not available";
@@ -406,6 +407,7 @@ export const useCourtStore = defineStore("court", () => {
   const monitoringError = ref<string | null>(null);
   const monitoringLastSuccessAt = ref<string | null>(null);
   const monitoringOperation = ref<"load" | "refresh" | null>(null);
+  let monitoringRequestRevision = 0;
   const activeTab = ref<WorkspaceTab>("strategy");
   const caseCosts = ref(normalizeCaseCosts({}));
   const webMcpSupported = ref(false);
@@ -489,10 +491,13 @@ export const useCourtStore = defineStore("court", () => {
   }
 
   function clearMonitoringState(): void {
+    monitoringRequestRevision += 1;
     monitoringStatus.value = null;
     monitoringEvaluation.value = null;
     monitoringError.value = null;
     monitoringLastSuccessAt.value = null;
+    monitoringLoading.value = false;
+    monitoringOperation.value = null;
   }
 
   function addAudit(_actor: AuditEvent["actor"], _action: string, _detail: string): void {
@@ -712,6 +717,7 @@ export const useCourtStore = defineStore("court", () => {
       return null;
     }
     const refresh = options.refresh === true;
+    const requestRevision = ++monitoringRequestRevision;
     monitoringLoading.value = true;
     monitoringOperation.value = refresh ? "refresh" : "load";
     monitoringError.value = null;
@@ -724,16 +730,21 @@ export const useCourtStore = defineStore("court", () => {
       } : { signal: options.signal }, options.actor ?? "user");
       const next = normalizeMonitoringResponse(payload);
       if (next.monitoring.strategyVersionId !== versionId) throw new Error("The API returned monitoring for a different strategy version.");
+      if (requestRevision !== monitoringRequestRevision) return next;
       monitoringStatus.value = next.monitoring;
       monitoringEvaluation.value = next.evaluation;
       monitoringLastSuccessAt.value = next.evaluation?.createdAt || new Date().toISOString();
       return next;
     } catch (issue) {
-      monitoringError.value = messageFor(issue, refresh ? "Could not check the latest completed bar." : "Could not load latest-bar monitoring.");
+      if (requestRevision === monitoringRequestRevision) {
+        monitoringError.value = messageFor(issue, refresh ? "Could not check the latest completed bar." : "Could not load latest-bar monitoring.");
+      }
       return null;
     } finally {
-      monitoringLoading.value = false;
-      monitoringOperation.value = null;
+      if (requestRevision === monitoringRequestRevision) {
+        monitoringLoading.value = false;
+        monitoringOperation.value = null;
+      }
     }
   }
 

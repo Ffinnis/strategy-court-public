@@ -56,6 +56,22 @@ describe("custom form controls", () => {
     expect(selectLayer).toBeGreaterThan(tabsLayer);
   });
 
+  test("selecting an option closes the menu before notifying its parent", () => {
+    const select = readFileSync(new URL("../src/components/forms/FormSelect.vue", import.meta.url), "utf8");
+    const selection = select.match(/function selectOption\(index: number\) \{(?<body>[\s\S]*?)\n\}/)?.groups?.body ?? "";
+
+    expect(selection.indexOf("closeMenu(true)")).toBeGreaterThanOrEqual(0);
+    expect(selection.indexOf("closeMenu(true)")).toBeLessThan(selection.indexOf("model.value = option.value"));
+    expect(select).toContain('@click.stop="selectOption(index)"');
+  });
+
+  test("workspace tabs do not combine keyed cached panels with an out-in transition", () => {
+    const workspace = readFileSync(new URL("../src/pages/CaseWorkspacePage.vue", import.meta.url), "utf8");
+
+    expect(workspace).toContain("<KeepAlive :max=\"6\">");
+    expect(workspace).not.toContain('<Transition name="workspace-panel"');
+  });
+
   test("Vue sources do not use native select or date controls", () => {
     const sourceRoot = new URL("../src/", import.meta.url);
     const vueFiles = [...new Bun.Glob("**/*.vue").scanSync(fileURLToPath(sourceRoot))].sort();

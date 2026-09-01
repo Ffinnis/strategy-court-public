@@ -224,6 +224,36 @@ describe("connected-state integrity", () => {
     expect(store.replay?.id).toBe("replay-1");
   });
 
+  test("a stale monitoring failure cannot replace a newer successful status", async () => {
+    setActivePinia(createPinia());
+    const store = useCourtStore();
+    store.currentCase = normalizeCase({
+      id: "c1", name: "Trend", activeVersionId: "v1",
+      versions: [{ id: "v1", confirmed: true, definition: {}, interpretation: "Confirmed" }],
+      runs: [], replays: [], audit: [],
+    });
+    let rejectFirst: ((reason: Error) => void) | undefined;
+    let requestCount = 0;
+    globalThis.fetch = (async () => {
+      requestCount += 1;
+      if (requestCount === 1) return new Promise<Response>((_resolve, reject) => { rejectFirst = reject; });
+      return new Response(JSON.stringify({
+        monitoring: { status: "not_started", strategyVersionId: "v1", positions: [], signals: [], changes: [], warnings: [] },
+        evaluation: null,
+      }), { status: 200, headers: { "content-type": "application/json" } });
+    }) as typeof fetch;
+
+    const stale = store.loadMonitoringStatus("v1");
+    const current = await store.loadMonitoringStatus("v1");
+    rejectFirst?.(new Error("Stale request failed"));
+    await stale;
+
+    expect(current?.monitoring.status).toBe("not_started");
+    expect(store.monitoringStatus?.status).toBe("not_started");
+    expect(store.monitoringError).toBeNull();
+    expect(store.monitoringLoading).toBe(false);
+  });
+
   test("WebMCP registration separates saved monitoring from explicit refresh before and during probation", async () => {
     setActivePinia(createPinia());
     const store = useCourtStore();
