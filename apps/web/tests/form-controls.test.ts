@@ -56,13 +56,13 @@ describe("custom form controls", () => {
     expect(selectLayer).toBeGreaterThan(tabsLayer);
   });
 
-  test("selecting an option closes the menu before notifying its parent", () => {
+  test("selecting an option closes the menu without reactivating an enclosing label", () => {
     const select = readFileSync(new URL("../src/components/forms/FormSelect.vue", import.meta.url), "utf8");
     const selection = select.match(/function selectOption\(index: number\) \{(?<body>[\s\S]*?)\n\}/)?.groups?.body ?? "";
 
     expect(selection.indexOf("closeMenu(true)")).toBeGreaterThanOrEqual(0);
     expect(selection.indexOf("closeMenu(true)")).toBeLessThan(selection.indexOf("model.value = option.value"));
-    expect(select).toContain('@click.stop="selectOption(index)"');
+    expect(select).toContain('@click.stop.prevent="selectOption(index)"');
   });
 
   test("workspace tabs do not combine keyed cached panels with an out-in transition", () => {

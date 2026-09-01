@@ -306,7 +306,7 @@ onBeforeUnmount(() => {
           :data-option-index="index"
           @mousedown.prevent
           @pointermove="!option.disabled && (activeIndex = index)"
-          @click.stop="selectOption(index)"
+          @click.stop.prevent="selectOption(index)"
         >
           <span class="form-select__option-copy">{{ option.label }}<small v-if="option.description">{{ option.description }}</small></span>
           <Check v-if="model === option.value" :size="15" :stroke-width="2" aria-hidden="true" />
