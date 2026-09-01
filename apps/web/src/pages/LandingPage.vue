@@ -4,6 +4,7 @@ import { useRoute, useRouter } from "vue-router";
 import { ArrowDown, ArrowRight, ArrowUpRight, Check, Plus } from "lucide-vue-next";
 import PixelButton from "@/components/ui/PixelButton.vue";
 import LandingMarketPreview from "@/components/LandingMarketPreview.vue";
+import RecentInvestigations from "@/components/RecentInvestigations.vue";
 import { useCourtStore } from "@/stores/court";
 import { authClient } from "@/services/auth";
 import { LANDING_MARKET_SOURCE } from "@/data/syntheticLandingMarket";
@@ -79,6 +80,8 @@ const steps = [
         <span v-else class="hero__note">Historical tests. No orders placed.</span>
       </div>
     </section>
+
+    <RecentInvestigations v-if="sessionState.data?.user" :active="true" :account-id="sessionState.data.user.id" />
 
     <section v-motion-reveal class="investigation" aria-label="Synthetic chart and example trading rules">
       <header class="investigation__header">

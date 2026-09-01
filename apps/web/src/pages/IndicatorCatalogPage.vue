@@ -37,6 +37,8 @@ interface CatalogIndicator {
   sharingState?: string;
 }
 
+type IndicatorParameter = NonNullable<CatalogIndicator["parameters"]>[number];
+
 const comparisonOptions = [
   { value: "gt", label: "Greater than" },
   { value: "gte", label: "Greater than or equal" },
@@ -137,25 +139,63 @@ const definition = computed(() => {
   };
 });
 
+function parameterBoundsInvalid(parameter: IndicatorParameter): boolean {
+  const value = parameterValues[parameter.name] ?? parameter.default;
+  if (parameter.type === "integer" || parameter.type === "number") {
+    return typeof value !== "number"
+      || !Number.isFinite(value)
+      || (parameter.type === "integer" && !Number.isInteger(value))
+      || (parameter.min !== undefined && value < parameter.min)
+      || (parameter.max !== undefined && value > parameter.max);
+  }
+  return typeof value !== "string" || !Boolean(parameter.options?.includes(value));
+}
+
+const macdRelationshipInvalid = computed(() => (
+  form.baseIndicator === "macd"
+  && typeof parameterValues.fastPeriod === "number"
+  && typeof parameterValues.slowPeriod === "number"
+  && Number.isFinite(parameterValues.fastPeriod)
+  && Number.isFinite(parameterValues.slowPeriod)
+  && parameterValues.fastPeriod >= parameterValues.slowPeriod
+));
+const sarRelationshipInvalid = computed(() => (
+  form.baseIndicator === "parabolic_sar"
+  && typeof parameterValues.acceleration === "number"
+  && typeof parameterValues.maximum === "number"
+  && Number.isFinite(parameterValues.acceleration)
+  && Number.isFinite(parameterValues.maximum)
+  && parameterValues.acceleration > parameterValues.maximum
+));
+const formulaDefaultInvalid = computed(() => (
+  form.formulaKind === "threshold" ? !Number.isFinite(form.threshold) : !Number.isFinite(form.scale)
+));
+
+function parameterInvalid(parameter: IndicatorParameter): boolean {
+  return parameterBoundsInvalid(parameter)
+    || (parameter.name === "slowPeriod" && macdRelationshipInvalid.value)
+    || (parameter.name === "maximum" && sarRelationshipInvalid.value);
+}
+
 const formValid = computed(() => (
   form.name.trim().length > 0
   && form.description.trim().length > 0
-  && activeParameters.value.every((parameter) => {
-    const value = parameterValues[parameter.name] ?? parameter.default;
-    if (parameter.type === "integer" || parameter.type === "number") {
-      return typeof value === "number"
-        && Number.isFinite(value)
-        && (parameter.type !== "integer" || Number.isInteger(value))
-        && (parameter.min === undefined || value >= parameter.min)
-        && (parameter.max === undefined || value <= parameter.max);
-    }
-    return typeof value === "string" && Boolean(parameter.options?.includes(value));
-  })
-  && (form.baseIndicator !== "macd" || Number(parameterValues.fastPeriod) < Number(parameterValues.slowPeriod))
-  && (form.baseIndicator !== "parabolic_sar" || Number(parameterValues.acceleration) <= Number(parameterValues.maximum))
-  && (form.formulaKind === "threshold" ? Number.isFinite(form.threshold) : Number.isFinite(form.scale))
+  && activeParameters.value.every((parameter) => !parameterInvalid(parameter))
+  && !formulaDefaultInvalid.value
   && Boolean(baseIndicator.value)
 ));
+
+function validationMessage(): string {
+  if (!form.name.trim()) return "Give the indicator a name.";
+  if (!form.description.trim()) return "Describe what the indicator measures.";
+  if (activeParameters.value.some(parameterBoundsInvalid)) return "Review the highlighted parameter bound.";
+  if (macdRelationshipInvalid.value) return "MACD slow period must be greater than fast period.";
+  if (sarRelationshipInvalid.value) return "SAR maximum acceleration must not be below acceleration.";
+  if (formulaDefaultInvalid.value) return form.formulaKind === "threshold"
+    ? "Enter a finite threshold default."
+    : "Enter a finite scale default.";
+  return "Choose an available base indicator.";
+}
 
 function syncParameterValues(): void {
   for (const key of Object.keys(parameterValues)) delete parameterValues[key];
@@ -197,7 +237,7 @@ async function createIndicator(): Promise<void> {
   if (creating.value) return;
   attempted.value = true;
   if (!formValid.value) {
-    createError.value = !form.name.trim() ? "Give the indicator a name." : !form.description.trim() ? "Describe what the indicator measures." : "Review the parameter bounds and relationships. MACD fast period must be below slow; SAR acceleration must not exceed maximum.";
+    createError.value = validationMessage();
     await nextTick();
     (document.querySelector<HTMLElement>('.builder-form [aria-invalid="true"]') ?? document.getElementById("indicator-base"))?.focus();
     return;
@@ -252,7 +292,7 @@ onMounted(() => loadIndicators());
       <div><strong>{{ customCount }}</strong><span>Custom</span></div>
     </section>
 
-    <div v-motion-reveal class="indicator-layout">
+    <div class="indicator-layout">
       <section class="catalog-panel" aria-labelledby="catalog-title">
         <div class="section-heading">
           <div><h2 id="catalog-title">Catalog</h2><p>Only ready indicators can be used by the current Court engine.</p></div>
@@ -327,7 +367,7 @@ onMounted(() => loadIndicators());
               <input
                 v-if="parameter.type === 'integer' || parameter.type === 'number'"
                 v-model.number="parameterValues[parameter.name]"
-                :aria-invalid="attempted && (typeof parameterValues[parameter.name] !== 'number' || Number(parameterValues[parameter.name]) < (parameter.min ?? -Infinity) || Number(parameterValues[parameter.name]) > (parameter.max ?? Infinity))"
+                :aria-invalid="attempted && parameterInvalid(parameter)"
                 aria-describedby="indicator-validation"
                 class="input"
                 type="number"
@@ -353,9 +393,9 @@ onMounted(() => loadIndicators());
               <span>Comparison</span>
               <FormSelect id="indicator-comparison" v-model="form.comparison" :options="comparisonOptions" aria-label="Comparison" />
             </label>
-            <label class="field"><span>Threshold default</span><input v-model.number="form.threshold" class="input" type="number" step="any" required /></label>
+            <label class="field"><span>Threshold default</span><input v-model.number="form.threshold" :aria-invalid="attempted && formulaDefaultInvalid" aria-describedby="indicator-validation" class="input" type="number" step="any" required /></label>
           </div>
-          <label v-else class="field"><span>Scale default</span><input v-model.number="form.scale" class="input" type="number" step="any" required /></label>
+          <label v-else class="field"><span>Scale default</span><input v-model.number="form.scale" :aria-invalid="attempted && formulaDefaultInvalid" aria-describedby="indicator-validation" class="input" type="number" step="any" required /></label>
 
           <details class="definition-preview">
             <summary>Structured definition</summary>

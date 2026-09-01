@@ -273,7 +273,7 @@ describe("connected-state integrity", () => {
     const enabled = ref(true);
     useWebMcp(enabled);
     await new Promise((resolve) => setTimeout(resolve, 0));
-    expect([...registered.keys()].sort()).toEqual(["create_case", "create_custom_indicator", "create_strategy_draft", "get_case_context", "list_indicator_catalog", "read_tool_result"]);
+    expect([...registered.keys()].sort()).toEqual(["create_case", "create_custom_indicator", "create_strategy_draft", "get_case_context", "list_cases", "list_indicator_catalog", "open_case", "read_tool_result"]);
     expect(registered.has("get_monitoring_status")).toBe(false);
 
     store.currentCase.versions[0]!.confirmed = true;
@@ -474,6 +474,7 @@ describe("connected-state integrity", () => {
     expect(argumentItems.additionalProperties).toBe(false);
     expect(((constantBranch?.properties as Record<string, Record<string, unknown>>).constant).minimum).toBe(-1e12);
     expect(((constantBranch?.properties as Record<string, Record<string, unknown>>).constant).maximum).toBe(1e12);
+    expect((webMcpSchemaContract.formulaArgument.oneOf as Array<Record<string, unknown>>).some((branch) => branch.$ref === "#/$defs/formula")).toBe(false);
     const strategyBranches = webMcpSchemaContract.valueExpression.oneOf as Array<Record<string, unknown>>;
     const customStrategyBranch = strategyBranches.find((branch) => "arguments" in ((branch.properties ?? {}) as Record<string, unknown>));
     const strategyIndicatorBranches = ((customStrategyBranch?.properties as Record<string, Record<string, unknown>>).indicator.oneOf as Array<Record<string, unknown>>);

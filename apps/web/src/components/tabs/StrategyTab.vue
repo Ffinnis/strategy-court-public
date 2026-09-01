@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, reactive, ref } from "vue";
+import { computed, nextTick, reactive, ref } from "vue";
 import { ArrowRight, Braces, Check, ChevronDown, LockKeyhole } from "lucide-vue-next";
 import DraftRuleAdjustments from "@/components/DraftRuleAdjustments.vue";
 import FormSelect from "@/components/forms/FormSelect.vue";
@@ -28,6 +28,7 @@ const rule = (): ManualRule => ({ left: expression(), operator: "", right: expre
 
 const store = useCourtStore();
 const showJson = ref(false);
+const ruleLedger = ref<HTMLElement | null>(null);
 const manualError = ref("");
 const manual = reactive({
   entry: rule(),
@@ -249,6 +250,12 @@ async function createManualDraft() {
     manualError.value = issue instanceof Error ? issue.message : "The manual rules are invalid.";
   }
 }
+
+async function reviewExactRules() {
+  await nextTick();
+  ruleLedger.value?.scrollIntoView({ behavior: "auto", block: "start" });
+  ruleLedger.value?.focus({ preventScroll: true });
+}
 </script>
 
 <template>
@@ -308,10 +315,11 @@ async function createManualDraft() {
           <p>{{ store.activeVersion.interpretation }}</p>
         </div>
         <button v-if="store.confirmed" class="button button--secondary" type="button" @click="store.activeTab = 'court'">{{ store.courtComplete ? 'View results' : 'Continue to test' }} <ArrowRight :size="14" /></button>
+        <button v-else class="button button--secondary" type="button" @click="reviewExactRules">Review exact rules <ArrowRight :size="14" /></button>
       </header>
 
       <DraftRuleAdjustments />
-      <div class="rule-ledger" aria-label="Trading rules">
+      <div ref="ruleLedger" class="rule-ledger" aria-label="Trading rules" tabindex="-1">
         <section v-for="group in [{ id: 'entry', label: 'Entry', description: 'Open a position when', rows: entryRows, count: entryCount }, { id: 'exit', label: 'Exit', description: 'Close the position when', rows: exitRows, count: exitCount }]" :key="group.id" class="rule-section">
           <header class="rule-section__header">
             <div><h3>{{ group.label }}</h3><p>{{ group.description }}</p></div>
@@ -342,10 +350,6 @@ async function createManualDraft() {
         <div><dt>Take profit</dt><dd>{{ store.activeVersion.definition.risk.takeProfitPercent == null ? 'Not set' : `${store.activeVersion.definition.risk.takeProfitPercent}%` }}</dd></div>
         <div><dt>Maximum holding period</dt><dd>{{ store.activeVersion.definition.risk.maxHoldingDays == null ? 'Not set' : `${store.activeVersion.definition.risk.maxHoldingDays} trading days` }}</dd></div>
       </dl>
-      <div v-if="!store.confirmed" class="approval-actions">
-        <div><LockKeyhole :size="15" /><span>Confirmation locks this version for testing. Later changes create a new version.</span></div>
-        <button class="button" type="button" :disabled="store.mutating" @click="store.confirmStrategy()"><Check :size="16" />{{ store.mutating ? "Confirming" : "Confirm this interpretation" }}</button>
-      </div>
     </section>
 
     <div class="strategy-detail-grid">
@@ -370,12 +374,18 @@ async function createManualDraft() {
 
       </section>
     </div>
+
+    <section v-if="!store.confirmed" class="approval-actions" aria-label="Confirm reviewed strategy">
+      <div><LockKeyhole :size="15" /><span>Confirmation locks this version for testing. Later changes create a new version.</span></div>
+      <button class="button" type="button" :disabled="store.mutating" @click="store.confirmStrategy()"><Check :size="16" />{{ store.mutating ? "Confirming" : "Confirm this interpretation" }}</button>
+    </section>
   </div>
 </template>
 
 <style scoped lang="scss">
 .manual-draft{display:grid;gap:28px}.manual-draft__header{max-width:720px}.manual-draft__header h2{margin:0;font-size:34px;letter-spacing:-.045em}.manual-draft__header>p:last-child{margin:10px 0 0;color:#8f8f89;font-size:14px;line-height:1.6}.case-brief{display:grid;grid-template-columns:120px 1fr;gap:24px;padding:18px 20px;border:1px solid rgba(255,255,255,.075);border-radius:14px;background:#141414;box-shadow:inset 0 1px 0 rgba(255,255,255,.04),0 18px 48px rgba(0,0,0,.2)}.case-brief>span{color:#777;font-size:11px;font-weight:600}.case-brief p{margin:0;color:#c7c7c2;font-size:13px;line-height:1.65}.rule-builder{display:grid;gap:0;border-top:1px solid rgba(255,255,255,.085)}.manual-rule{min-width:0;margin:0;padding:24px 0;border:0;border-bottom:1px solid rgba(255,255,255,.075)}.manual-rule legend{display:flex;align-items:baseline;gap:10px;padding:0}.manual-rule legend span{font-size:16px;font-weight:650}.manual-rule legend small{color:#777;font-size:11px}.manual-rule__grid{display:grid;grid-template-columns:minmax(0,1fr) 190px minmax(0,1fr);align-items:end;gap:12px;margin-top:18px}.operator-field{display:grid;gap:8px}.operator-field label,.risk-fields label{color:#a1a1aa;font-size:11px;font-weight:550}.risk-fields{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px;margin:0;padding:24px 0;border:0;border-bottom:1px solid rgba(255,255,255,.075)}.risk-fields legend{grid-column:1/-1;margin-bottom:4px;padding:0;font-size:14px;font-weight:650}.risk-fields label{display:grid;gap:8px}.manual-draft__footer{display:flex;align-items:center;justify-content:space-between;gap:24px;padding-top:20px}.manual-draft__footer>div{display:grid;gap:4px}.manual-draft__footer strong{font-size:12px}.manual-draft__footer span,.manual-limit{color:#777;font-size:10px}.manual-error{margin:2px 0 0;color:#e4e4e7;font-size:12px}.manual-limit{margin:0}@media(max-width:980px){.manual-rule__grid{grid-template-columns:1fr}.operator-field{max-width:none}.risk-fields{grid-template-columns:1fr 1fr}.risk-fields label:last-child{grid-column:1/-1}}@media(max-width:620px){.case-brief{grid-template-columns:1fr;gap:8px}.risk-fields{grid-template-columns:1fr}.risk-fields label:last-child{grid-column:auto}.manual-draft__footer{align-items:stretch;flex-direction:column}.manual-draft__footer .button{width:100%}}
 .strategy-stack{display:block}.strategy-overview{border-top:1px solid rgba(255,255,255,.1)}.strategy-overview__header{display:flex;align-items:flex-start;justify-content:space-between;gap:32px;padding:32px 0 28px}.strategy-overview__copy{max-width:820px}.strategy-overview__copy .eyebrow{margin-bottom:8px}.strategy-overview__copy h2{margin:0;font-size:28px;letter-spacing:-.04em}.strategy-overview__copy p{max-width:760px;margin:10px 0 0;color:#a0a09a;font-size:14px;line-height:1.65}.strategy-overview__header>.pill{flex:none;margin-top:1px}.rule-ledger{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));border-top:1px solid rgba(255,255,255,.085)}.rule-section{min-width:0;padding:28px 32px 30px}.rule-section:first-child{padding-left:0}.rule-section+ .rule-section{padding-right:0;border-left:1px solid rgba(255,255,255,.075)}.rule-section__header{display:flex;align-items:flex-start;justify-content:space-between;gap:20px}.rule-section__header h3{margin:0;font-size:17px;letter-spacing:-.02em}.rule-section__header p{margin:5px 0 0;color:#7f7f79;font-size:12px}.rule-section__header>span{color:#74746f;font-size:11px}.condition-tree{display:grid;margin-top:23px;border-top:1px solid rgba(255,255,255,.065)}.condition-row{display:grid;grid-template-columns:72px minmax(0,1fr);align-items:center;gap:10px;min-height:44px;padding-block:9px;border-bottom:1px solid rgba(255,255,255,.055)}.condition-row__prefix{display:flex;align-items:center;gap:6px;min-width:0}.condition-join{color:#777772;font-size:11px}.condition-logic{display:inline-flex;min-height:23px;align-items:center;padding:0 7px;border:1px solid #343434;border-radius:7px;color:#c2c2bd;background:#161616;font-size:11px;font-weight:600}.condition-row p{min-width:0;margin:0;color:#a2a29d;font-size:13px;line-height:1.55}.condition-row--group p{color:#8c8c86}.condition-comparison{display:flex;flex-wrap:wrap;gap:4px 6px}.condition-comparison strong{color:#e4e4e1;font-weight:600}.condition-comparison span{color:#888883}.approval-actions{display:flex;align-items:center;justify-content:space-between;gap:24px;padding:20px 0;border-top:1px solid rgba(255,255,255,.085)}.approval-actions>div{display:flex;align-items:center;gap:8px;color:#85857f;font-size:12px}.strategy-detail-grid{display:grid;grid-template-columns:minmax(0,1.2fr) minmax(320px,.8fr);border-top:1px solid rgba(255,255,255,.1);border-bottom:1px solid rgba(255,255,255,.1)}.strategy-detail,.structured-definition{min-width:0;padding:30px 32px 32px}.strategy-detail{padding-left:0}.structured-definition{padding-right:0;border-left:1px solid rgba(255,255,255,.075)}.strategy-detail__header{display:flex;align-items:flex-start;justify-content:space-between;gap:20px}.strategy-detail__header h3{margin:0;font-size:17px;letter-spacing:-.02em}.strategy-detail__header p{margin:5px 0 0;color:#7f7f79;font-size:12px;line-height:1.5}.detail-list{margin:19px 0 0}.detail-list div{display:grid;grid-template-columns:140px minmax(0,1fr);gap:20px;padding:12px 0;border-bottom:1px solid rgba(255,255,255,.055);font-size:12px}.detail-list div:last-child{border:0}.detail-list dt{color:#74746f}.detail-list dd{margin:0;color:#c2c2bd;font-weight:500;line-height:1.5}.definition-toggle{display:flex;width:100%;min-height:48px;align-items:center;justify-content:space-between;padding:0;border:0;color:#daddda;background:transparent;cursor:pointer}.definition-toggle>span{display:flex;align-items:center;gap:11px;text-align:left}.definition-toggle>span>svg{color:#d4d4d1}.definition-toggle strong,.definition-toggle small{display:block}.definition-toggle strong{font-size:14px}.definition-toggle small{margin-top:4px;color:#74746f;font-size:11px;font-weight:400}.definition-toggle>svg{color:#74746f;transition:transform 160ms ease}.definition-toggle>svg.rotated{transform:rotate(180deg)}.definition-json{max-height:400px;overflow:auto;margin-top:18px;border-top:1px solid rgba(255,255,255,.065);background:#0d0d0d}.definition-json pre{margin:0;padding:17px 0;color:#a1a1aa;font:11px/1.65 ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,monospace;white-space:pre-wrap}.definition-summary{display:grid;grid-template-columns:1fr 1fr;margin-top:18px;border-top:1px solid rgba(255,255,255,.065)}.definition-summary div{display:flex;align-items:center;gap:7px;padding:13px 0;color:#82827c;font-size:11px}.definition-summary div:nth-child(even){padding-left:18px;border-left:1px solid rgba(255,255,255,.055)}.definition-summary span{color:#e4e4e1;font-size:12px;font-weight:650}
+.approval-actions{margin:18px 0 2px;padding:18px 0;border-bottom:1px solid rgba(255,255,255,.085)}
 @media(max-width:900px){.rule-ledger,.strategy-detail-grid{grid-template-columns:1fr}.rule-section{padding-inline:0}.rule-section+ .rule-section{border-top:1px solid rgba(255,255,255,.075);border-left:0}.strategy-detail,.structured-definition{padding-inline:0}.structured-definition{border-top:1px solid rgba(255,255,255,.075);border-left:0}.approval-actions{align-items:flex-start;flex-direction:column}.detail-list div{grid-template-columns:1fr;gap:4px}}
 @media(max-width:520px){.strategy-overview__header{align-items:flex-start;flex-direction:column;gap:18px;padding-block:25px}.strategy-overview__copy h2{font-size:24px}.rule-section__header{align-items:flex-end}.condition-row{grid-template-columns:60px minmax(0,1fr)}.approval-actions .button{width:100%}.definition-summary{grid-template-columns:1fr}.definition-summary div:nth-child(even){padding-left:0;border-left:0}.definition-summary div+div{border-top:1px solid rgba(255,255,255,.045)}}
 
@@ -384,11 +394,12 @@ async function createManualDraft() {
 .strategy-overview__header { align-items: flex-start; padding-top: 0; }
 .strategy-overview__header > .button { flex-shrink: 0; }
 .strategy-detail-grid { display: block; }
+.rule-ledger { scroll-margin-top: calc(var(--app-header-height) + 78px); }
 .execution-summary { display: flex; align-items: center; gap: 18px; padding: 20px 0; font-size: 13px; color: #c1c1ca; cursor: pointer; list-style: none; }
 .execution-summary::-webkit-details-marker { display: none; }
 .execution-summary small { margin-left: auto; font-size: 11px; color: #8e8e9a; }
 .execution-summary svg { transition: transform var(--duration-control); }.strategy-detail[open] .execution-summary svg { transform: rotate(180deg); }
 .risk-summary { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 24px; margin: 0; padding: 22px 0; border-block: 1px solid #292929; }
 .risk-summary dt { color: #8f8f9b; font-size: 12px; }.risk-summary dd { margin: 8px 0 0; font-size: 15px; color: #d0d0da; }
-@media(max-width:720px) { .risk-summary { grid-template-columns: 1fr; gap: 16px; }.risk-summary > div { display: flex; justify-content: space-between; align-items: center; gap: 14px; }.risk-summary dd { margin: 0; }.execution-summary small { display: none; }.execution-summary svg { margin-left: auto; } }
+@media(max-width:720px) { .rule-ledger { scroll-margin-top: calc(var(--app-header-height) + 72px); }.risk-summary { grid-template-columns: 1fr; gap: 16px; }.risk-summary > div { display: flex; justify-content: space-between; align-items: center; gap: 14px; }.risk-summary dd { margin: 0; }.execution-summary small { display: none; }.execution-summary svg { margin-left: auto; } }
 </style>

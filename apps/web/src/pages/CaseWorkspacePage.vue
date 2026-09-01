@@ -15,6 +15,7 @@ import EvidenceTab from "@/components/tabs/EvidenceTab.vue";
 import VariantsTab from "@/components/tabs/VariantsTab.vue";
 import ProbationTab from "@/components/tabs/ProbationTab.vue";
 import AuditTab from "@/components/tabs/AuditTab.vue";
+import WebMcpWorkspaceStatus from "@/components/WebMcpWorkspaceStatus.vue";
 
 const route = useRoute();
 const store = useCourtStore();
@@ -58,6 +59,13 @@ async function settleTabScroll() {
   window.scrollTo({ top: Math.max(0, target), behavior: "auto" });
 }
 
+async function revealSelectedTab(focus = false) {
+  await nextTick();
+  const selectedTab = tablist.value?.querySelector<HTMLButtonElement>('[role="tab"][aria-selected="true"]');
+  selectedTab?.scrollIntoView({ behavior: "auto", block: "nearest", inline: "center" });
+  if (focus) selectedTab?.focus({ preventScroll: true });
+}
+
 function moveTab(event: KeyboardEvent) {
   if (!["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key)) return;
   event.preventDefault();
@@ -71,11 +79,20 @@ function moveTab(event: KeyboardEvent) {
   nextTick(() => tablist.value?.querySelectorAll<HTMLButtonElement>('[role="tab"]')[next]?.focus());
 }
 
+async function openAgentActivity() {
+  store.activeTab = "audit";
+  await revealSelectedTab(true);
+}
+
 async function openCase() {
-  await store.loadCase(caseId.value);
+  const requestedCaseId = caseId.value;
+  const preloadedForThisRoute = store.consumeCaseRouteHandoff(requestedCaseId);
+  if (!preloadedForThisRoute && !await store.loadCase(requestedCaseId)) return;
+  if (caseId.value !== requestedCaseId || store.currentCase?.id !== requestedCaseId) return;
   const tab = typeof route.query.tab === "string" ? route.query.tab : "";
   if (typeof route.query.version === "string") store.selectVersion(route.query.version);
   store.activeTab = tabs.some(item => item.id === tab) ? tab as WorkspaceTab : store.confirmed ? "court" : "strategy";
+  await revealSelectedTab();
   if (typeof route.query.evidence === "string" && (route.query.kind === "trade" || route.query.kind === "failure")) {
     if (!store.latestRun || route.query.run !== store.latestRun.id) { store.error = "This private link refers to a different run. Select its version or inspect the current result."; return; }
     try { await store.selectEvidence(store.latestRun.id,{kind:route.query.kind,id:route.query.evidence}); } catch { /* Inspector displays retry. */ }
@@ -83,7 +100,10 @@ async function openCase() {
 }
 onMounted(openCase);
 watch(caseId, openCase);
-watch(() => store.activeTab, settleTabScroll);
+watch(() => store.activeTab, async () => {
+  await revealSelectedTab();
+  await settleTabScroll();
+});
 </script>
 
 <template>
@@ -125,6 +145,7 @@ watch(() => store.activeTab, settleTabScroll);
               <span>{{ tab.label }}</span>
             </button>
           </nav>
+          <WebMcpWorkspaceStatus @open="openAgentActivity" />
           <WorkspaceCommands />
         </div>
       </div>
@@ -164,7 +185,8 @@ watch(() => store.activeTab, settleTabScroll);
   background: var(--surface-page);
 }
 .workspace-navigation__controls {
-  display: inline-flex;
+  display: flex;
+  width: 100%;
   max-width: 100%;
   align-items: center;
   gap: 9px;
@@ -176,7 +198,7 @@ watch(() => store.activeTab, settleTabScroll);
   display: flex;
   min-width: 0;
   min-height: 45px;
-  flex: 0 1 auto;
+  flex: 1 1 auto;
   gap: 7px;
   overflow-x: auto;
   padding: 1px 0 9px;

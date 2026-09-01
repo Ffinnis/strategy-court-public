@@ -23,6 +23,7 @@ const humanize = (value: unknown) => String(value ?? "").replaceAll(/[._-]+/g, "
 const finite = (value: unknown, fallback = 0) => typeof value === "number" && Number.isFinite(value) ? value : fallback;
 const scalar = (value: unknown) => typeof value === "number" ? value.toLocaleString(undefined, { maximumFractionDigits: 2 }) : typeof value === "boolean" ? (value ? "Yes" : "No") : String(value ?? "Not reported");
 const messageFor = (issue: unknown, fallback: string) => issue instanceof Error ? issue.message : fallback;
+const FAILURE_REQUEST_TIMEOUT_MS = 20_000;
 
 function versionConfirmed(version?: StrategyVersion): boolean {
   return Boolean(version?.confirmed || version?.confirmedAt);
@@ -394,10 +395,37 @@ export const useCourtStore = defineStore("court", () => {
   const failureLoading = ref(false);
   const failureEvidenceCache = ref<Record<string, FailureEvidence>>({});
   const failureEvidenceError = ref<string | null>(null);
+  const pendingFailureEvidence = new Map<string, { promise: Promise<FailureEvidence>; controller: AbortController; waiters: number }>();
+  const failureRequests = new Set<symbol>();
+  const updateFailureLoading = () => { failureLoading.value = failureRequests.size > 0; };
+  let loadCaseRevision = 0;
+  let loadCaseController: AbortController | null = null;
+  let caseRouteHandoffId: string | null = null;
+  const invalidateCaseLoad = () => {
+    loadCaseRevision += 1;
+    loadCaseController?.abort(new DOMException("Case navigation changed.", "AbortError"));
+    loadCaseController = null;
+    caseRouteHandoffId = null;
+  };
+
+  function prepareCaseRouteHandoff(caseId: string): boolean {
+    if (currentCase.value?.id !== caseId) return false;
+    caseRouteHandoffId = caseId;
+    return true;
+  }
+
+  function consumeCaseRouteHandoff(caseId: string): boolean {
+    const preloaded = caseRouteHandoffId === caseId && currentCase.value?.id === caseId;
+    caseRouteHandoffId = null;
+    return preloaded;
+  }
   watch(() => currentCase.value?.id, () => {
     failureEvidenceCache.value = {};
     failureEvidenceError.value = null;
-    failureLoading.value = false;
+    for (const request of pendingFailureEvidence.values()) request.controller.abort(new DOMException("Case changed.", "AbortError"));
+    pendingFailureEvidence.clear();
+    failureRequests.clear();
+    updateFailureLoading();
   }, { flush: "sync" });
   const error = ref<string | null>(null);
   const notice = ref<string | null>(null);
@@ -500,6 +528,21 @@ export const useCourtStore = defineStore("court", () => {
     monitoringOperation.value = null;
   }
 
+  function clearCaseSession(): void {
+    invalidateCaseLoad();
+    currentCase.value = null;
+    comparison.value = null;
+    selectedVersionId.value = null;
+    loading.value = false;
+    mutating.value = false;
+    comparisonLoading.value = false;
+    error.value = null;
+    notice.value = null;
+    caseCosts.value = normalizeCaseCosts({});
+    evidence.clearEvidenceSelection();
+    clearMonitoringState();
+  }
+
   function addAudit(_actor: AuditEvent["actor"], _action: string, _detail: string): void {
     // Audit events are server-owned so the visible ledger cannot diverge from the exported record.
   }
@@ -528,9 +571,12 @@ export const useCourtStore = defineStore("court", () => {
 
   let sampleRequestId: string | null = null;
   async function createSample(): Promise<string | null> {
+    invalidateCaseLoad();
+    const revision = loadCaseRevision;
     sampleRequestId ??= crypto.randomUUID();
     try {
       const payload = await apiRequest<unknown>("/api/samples/rsi-pullback/cases", {method:"POST",body:JSON.stringify({requestId:sampleRequestId})});
+      if (revision !== loadCaseRevision) return null;
       const created = normalizeCase(unwrap(payload,"case"));
       currentCase.value = created; selectedVersionId.value = null;
       sampleRequestId = null;
@@ -540,9 +586,12 @@ export const useCourtStore = defineStore("court", () => {
   const createSyntheticSample = () => createCase(sampleInput,true);
 
   async function createCase(input: CaseInput, withDraft = false, actor: ApiActor = "user", signal?: AbortSignal, requestId?: string): Promise<string | null> {
+    invalidateCaseLoad();
+    const revision = loadCaseRevision;
     loading.value = true; error.value = null; notice.value = null;
     try {
       const payload = await apiRequest<unknown>("/api/cases", { method: "POST", signal, body: JSON.stringify({ ...input, requestId, commissionBps: input.commissionBpsPerSide, slippageBps: input.slippageBpsPerSide, courtProfile: "balanced" }) }, actor);
+      if (revision !== loadCaseRevision || signal?.aborted) return null;
       const rawCase = unwrap(payload, "case");
       const created = normalizeCase(rawCase, input);
       if (!created.id) throw new Error("The API did not return the created case ID.");
@@ -551,6 +600,7 @@ export const useCourtStore = defineStore("court", () => {
       currentCase.value = created;
       selectedVersionId.value = null;
       await refreshCase(actor, signal);
+      if (revision !== loadCaseRevision || signal?.aborted) return null;
       if (withDraft && currentCase.value?.versions.length === 0) {
         await createDraft(
           { ...structuredClone(sampleDefinition), name: currentCase.value.name, universe: [...currentCase.value.symbols] },
@@ -560,25 +610,52 @@ export const useCourtStore = defineStore("court", () => {
       }
       return created.id;
     } catch (issue) {
+      if (revision !== loadCaseRevision || signal?.aborted) return null;
       error.value = messageFor(issue, "Could not create this Court case."); return null;
-    } finally { loading.value = false; }
+    } finally {
+      if (revision === loadCaseRevision) loading.value = false;
+    }
   }
 
-  async function loadCase(id: string, actor: ApiActor = "user"): Promise<void> {
-    loading.value = true; error.value = null; comparison.value = null; failureEvidenceCache.value = {}; failureEvidenceError.value = null;
-    selectedVersionId.value = null;
-    clearMonitoringState();
+  async function loadCase(id: string, actor: ApiActor = "user", signal?: AbortSignal, preserveCurrentOnError = false): Promise<boolean> {
+    invalidateCaseLoad();
+    const revision = loadCaseRevision;
+    const controller = new AbortController();
+    loadCaseController = controller;
+    const requestSignal = signal ? AbortSignal.any([controller.signal, signal]) : controller.signal;
+    loading.value = true;
+    error.value = null;
     try {
-      const payload = await apiRequest<unknown>(`/api/cases/${encodeURIComponent(id)}`, {}, actor);
+      const payload = await apiRequest<unknown>(`/api/cases/${encodeURIComponent(id)}`, { signal: requestSignal }, actor);
       const rawCase = unwrap(payload, "case");
       const next = normalizeCase(rawCase);
       if (!next.id) throw new Error("The API returned an incomplete case response.");
+      if (revision !== loadCaseRevision || requestSignal.aborted) return false;
+      comparison.value = null;
+      failureEvidenceCache.value = {};
+      failureEvidenceError.value = null;
+      selectedVersionId.value = null;
+      clearMonitoringState();
       caseCosts.value = normalizeCaseCosts(rawCase);
       currentCase.value = next;
       if (variants.value.length) void loadComparison(actor);
+      return true;
     } catch (issue) {
-      currentCase.value = null; error.value = messageFor(issue, "Could not load this Court case.");
-    } finally { loading.value = false; }
+      if (revision !== loadCaseRevision || controller.signal.aborted) return false;
+      if (!preserveCurrentOnError) {
+        currentCase.value = null;
+        comparison.value = null;
+        selectedVersionId.value = null;
+        clearMonitoringState();
+      }
+      error.value = messageFor(issue, "Could not load this Court case.");
+      return false;
+    } finally {
+      if (revision === loadCaseRevision) {
+        if (loadCaseController === controller) loadCaseController = null;
+        loading.value = false;
+      }
+    }
   }
 
   async function createDraft(requestedDefinition?: StrategyDefinition, requestedInterpretation?: string, actor: ApiActor = "user", signal?: AbortSignal): Promise<boolean> {
@@ -748,40 +825,74 @@ export const useCourtStore = defineStore("court", () => {
     }
   }
 
-  async function inspectFailure(runId: string, failureId: string, actor: ApiActor = "user", signal?: AbortSignal): Promise<FailureEvidence | null> {
+  async function inspectFailure(runId: string, failureId: string, actor: ApiActor = "user", signal?: AbortSignal): Promise<FailureEvidence> {
     const requestCaseId = currentCase.value?.id;
     const cacheKey = `${runId}:${failureId}`;
     if (failureEvidenceCache.value[cacheKey]) return failureEvidenceCache.value[cacheKey];
     const local = result.value?.failures.find((item) => item.id === failureId);
     const runTrades = result.value?.trades ?? [];
-    failureLoading.value = true; failureEvidenceError.value = null;
+    signal?.throwIfAborted();
+    let pending = pendingFailureEvidence.get(cacheKey);
+    if (!pending) {
+      const request = Symbol(cacheKey);
+      const controller = new AbortController();
+      const timeout = globalThis.setTimeout(() => controller.abort(new Error("Failure evidence request timed out. Try again.")), FAILURE_REQUEST_TIMEOUT_MS);
+      failureRequests.add(request);
+      updateFailureLoading();
+      let entry!: { promise: Promise<FailureEvidence>; controller: AbortController; waiters: number };
+      const promise = (async () => {
+        const payload = await apiRequest<unknown>(`/api/court-runs/${encodeURIComponent(runId)}/failures/${encodeURIComponent(failureId)}`, { signal: controller.signal }, actor);
+        const enriched = normalizeFailure(unwrap<unknown>(payload, "failure"), 0, local?.trades ?? [], runTrades);
+        if (currentCase.value?.id === requestCaseId) failureEvidenceCache.value[cacheKey] = enriched;
+        return enriched;
+      })().finally(() => {
+        globalThis.clearTimeout(timeout);
+        failureRequests.delete(request);
+        if (pendingFailureEvidence.get(cacheKey) === entry) pendingFailureEvidence.delete(cacheKey);
+        updateFailureLoading();
+      });
+      entry = { promise, controller, waiters: 0 };
+      pending = entry;
+      pendingFailureEvidence.set(cacheKey, entry);
+    }
+    failureEvidenceError.value = null;
+    pending.waiters += 1;
     try {
-      const payload = await apiRequest<unknown>(`/api/court-runs/${encodeURIComponent(runId)}/failures/${encodeURIComponent(failureId)}`, { signal }, actor);
-      const enriched = normalizeFailure(unwrap<unknown>(payload, "failure"), 0, local?.trades ?? [], runTrades);
-      if (currentCase.value?.id === requestCaseId) failureEvidenceCache.value[cacheKey] = enriched;
-      return enriched;
-    } catch (issue) { if (currentCase.value?.id === requestCaseId && latestRun.value?.id === runId) failureEvidenceError.value = messageFor(issue, "Could not load this period's evidence."); return null; }
-    finally { failureLoading.value = false; }
+      if (!signal) return await pending.promise;
+      return await new Promise<FailureEvidence>((resolve, reject) => {
+        const aborted = () => reject(signal.reason ?? new DOMException("Operation cancelled.", "AbortError"));
+        const settle = <T>(callback: (value: T) => void, value: T) => {
+          signal.removeEventListener("abort", aborted);
+          callback(value);
+        };
+        signal.addEventListener("abort", aborted, { once: true });
+        if (signal.aborted) aborted();
+        pending!.promise.then(value => settle(resolve, value), issue => settle(reject, issue));
+      });
+    } catch (issue) {
+      if (!signal?.aborted && currentCase.value?.id === requestCaseId && latestRun.value?.id === runId) failureEvidenceError.value = messageFor(issue, "Could not load this period's evidence.");
+      throw issue;
+    } finally {
+      pending.waiters -= 1;
+      if (pending.waiters === 0 && pendingFailureEvidence.get(cacheKey) === pending) pending.controller.abort(new DOMException("Failure evidence request cancelled.", "AbortError"));
+    }
   }
 
   async function enrichFailures(actor: ApiActor = "user"): Promise<void> {
     const requestCaseId = currentCase.value?.id;
     const runId = latestRun.value?.id;
     const failures = result.value?.failures ?? [];
-    const runTrades = result.value?.trades ?? [];
     if (!runId || failures.length === 0) return;
     const pending = failures.filter((failure) => !failureEvidenceCache.value[`${runId}:${failure.id}`]);
     if (!pending.length) return;
-    failureLoading.value = true; failureEvidenceError.value = null;
+    failureEvidenceError.value = null;
     const outcomes = await Promise.allSettled(pending.map(async (failure) => {
-      const payload = await apiRequest<unknown>(`/api/court-runs/${encodeURIComponent(runId)}/failures/${encodeURIComponent(failure.id)}`, {}, actor);
-      return normalizeFailure(unwrap<unknown>(payload, "failure"), 0, failure.trades, runTrades);
+      return inspectFailure(runId, failure.id, actor);
     }));
     if (currentCase.value?.id !== requestCaseId) return;
     outcomes.forEach((outcome, index) => { if (outcome.status === "fulfilled") failureEvidenceCache.value[`${runId}:${pending[index]!.id}`] = outcome.value; });
     const rejected = outcomes.find((outcome): outcome is PromiseRejectedResult => outcome.status === "rejected");
     if (rejected && latestRun.value?.id === runId) failureEvidenceError.value = messageFor(rejected.reason, "Some period details could not be loaded.");
-    failureLoading.value = false;
   }
 
   function selectVersion(id: string): void {
@@ -798,6 +909,6 @@ export const useCourtStore = defineStore("court", () => {
     webMcpStatus, webMcpExpectedToolNames, webMcpErrors,
     activeVersion, variantParentVersion, variantParentRun, variantParentResult, selectedVersionId, confirmed, latestRun, courtComplete, courtInvalid, result, replay, running, variants, eligibleReplayVersions, probationCandidate, monitoringCandidate,
     createSample, createCase, loadCase, refreshCase, createDraft, confirmStrategy, runCourt, loadComparison, createVariants, startReplay, advanceReplay, loadMonitoringStatus, inspectFailure, enrichFailures,
-    selectVersion, clearError, addAudit,
+    selectVersion, clearError, addAudit, clearCaseSession, prepareCaseRouteHandoff, consumeCaseRouteHandoff,
   };
 });

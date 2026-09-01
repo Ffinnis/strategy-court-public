@@ -45,6 +45,7 @@ export interface AppOptions {
   allowedOrigins?: string[];
   resolveSession?: (request: Request) => Promise<AuthSession | null>;
   migrate?: boolean;
+  buildId?: string;
 }
 
 export interface AuthSession {
@@ -184,6 +185,35 @@ function date(value: unknown, field: string): string {
   return parsed;
 }
 
+function queryInteger(url: URL, field: string, fallback: number, minimum: number, maximum: number): number {
+  const raw = url.searchParams.get(field);
+  if (raw === null) return fallback;
+  if (!/^\d+$/.test(raw)) {
+    throw new ApiError(422, "validation_error", `${field} must be an integer between ${minimum} and ${maximum}`, { field, minimum, maximum });
+  }
+  const value = Number(raw);
+  if (!Number.isSafeInteger(value) || value < minimum || value > maximum) {
+    throw new ApiError(422, "validation_error", `${field} must be an integer between ${minimum} and ${maximum}`, { field, minimum, maximum });
+  }
+  return value;
+}
+
+function numericAlias(value: unknown, field: string): number {
+  if (typeof value === "number" && Number.isFinite(value)) return value;
+  if (typeof value === "string" && value.trim() !== "") {
+    const parsed = Number(value);
+    if (Number.isFinite(parsed)) return parsed;
+  }
+  throw new ApiError(422, "validation_error", `${field} must be a finite number or numeric string`, { field });
+}
+
+function stringAlias(value: unknown, field: string): string {
+  if (typeof value !== "string") {
+    throw new ApiError(422, "validation_error", `${field} must be a string`, { field });
+  }
+  return value.trim();
+}
+
 function safeRunError(error: unknown): Record<string, unknown> {
   if (error instanceof ApiError) {
     return {
@@ -317,9 +347,73 @@ async function importIndicatorManifest(
   return importedRoot;
 }
 
+const CASE_INPUT_FIELDS = new Set([
+  "name", "description", "symbols",
+  "dateFrom", "dateTo", "startDate", "endDate", "dateRange",
+  "initialCapital", "capital",
+  "commissionBps", "slippageBps", "commissionBpsPerSide", "slippageBpsPerSide", "costs",
+  "courtProfile", "selectedProfile", "requestId",
+]);
+
+function aliasValue<T>(
+  field: string,
+  aliases: Array<[path: string, value: unknown]>,
+  normalize: (value: unknown, path: string) => T,
+): T | undefined {
+  const supplied = aliases.filter(([, value]) => value !== undefined);
+  if (!supplied.length) return undefined;
+  const normalized = supplied.map(([path, value]) => [path, normalize(value, path)] as const);
+  const first = normalized[0]![1];
+  if (normalized.some(([, value]) => !Object.is(value, first))) {
+    throw new ApiError(422, "validation_error", `${field} aliases disagree`, {
+      field,
+      aliases: normalized.map(([path]) => path),
+    });
+  }
+  return first;
+}
+
 function caseInput(value: Record<string, unknown>) {
-  const range = value.dateRange && typeof value.dateRange === "object" ? value.dateRange as Record<string, unknown> : {};
-  const costs = value.costs && typeof value.costs === "object" ? value.costs as Record<string, unknown> : {};
+  const unexpected = Object.keys(value).filter((key) => !CASE_INPUT_FIELDS.has(key));
+  if (unexpected.length) {
+    throw new ApiError(422, "validation_error", "Case contains unsupported fields", { unexpected });
+  }
+  const range = value.dateRange === undefined || value.dateRange === null
+    ? {}
+    : requireObject(value.dateRange, "dateRange must be an object");
+  const costs = value.costs === undefined || value.costs === null
+    ? {}
+    : requireObject(value.costs, "costs must be an object");
+  const unexpectedRange = Object.keys(range).filter((key) => !["from", "to", "start", "end"].includes(key));
+  if (unexpectedRange.length) {
+    throw new ApiError(422, "validation_error", "dateRange contains unsupported fields", { path: "dateRange", unexpected: unexpectedRange });
+  }
+  const unexpectedCosts = Object.keys(costs).filter((key) => !["commissionBpsPerSide", "slippageBpsPerSide"].includes(key));
+  if (unexpectedCosts.length) {
+    throw new ApiError(422, "validation_error", "costs contains unsupported fields", { path: "costs", unexpected: unexpectedCosts });
+  }
+  const dateFromValue = aliasValue("dateFrom", [
+    ["dateFrom", value.dateFrom], ["startDate", value.startDate],
+    ["dateRange.from", range.from], ["dateRange.start", range.start],
+  ], (item, path) => stringAlias(item, path));
+  const dateToValue = aliasValue("dateTo", [
+    ["dateTo", value.dateTo], ["endDate", value.endDate],
+    ["dateRange.to", range.to], ["dateRange.end", range.end],
+  ], (item, path) => stringAlias(item, path));
+  const initialCapitalValue = aliasValue("initialCapital", [
+    ["initialCapital", value.initialCapital], ["capital", value.capital],
+  ], (item, path) => numericAlias(item, path));
+  const commissionValue = aliasValue("commissionBps", [
+    ["commissionBps", value.commissionBps], ["commissionBpsPerSide", value.commissionBpsPerSide],
+    ["costs.commissionBpsPerSide", costs.commissionBpsPerSide],
+  ], (item, path) => numericAlias(item, path));
+  const slippageValue = aliasValue("slippageBps", [
+    ["slippageBps", value.slippageBps], ["slippageBpsPerSide", value.slippageBpsPerSide],
+    ["costs.slippageBpsPerSide", costs.slippageBpsPerSide],
+  ], (item, path) => numericAlias(item, path));
+  const profileValue = aliasValue("courtProfile", [
+    ["courtProfile", value.courtProfile], ["selectedProfile", value.selectedProfile],
+  ], (item, path) => stringAlias(item, path));
   const symbols = value.symbols;
   if (!Array.isArray(symbols) || symbols.length < 1 || symbols.length > 5) {
     throw new ApiError(422, "validation_error", "symbols must contain one to five curated instruments", { field: "symbols" });
@@ -328,8 +422,8 @@ function caseInput(value: Record<string, unknown>) {
   if (normalizedSymbols.length !== symbols.length || normalizedSymbols.some((symbol) => !CURATED_UNIVERSE.includes(symbol as never))) {
     throw new ApiError(422, "validation_error", "symbols contains duplicates or unsupported instruments", { field: "symbols", allowed: CURATED_UNIVERSE });
   }
-  const dateFrom = date(value.dateFrom ?? value.startDate ?? range.from ?? range.start, "dateFrom");
-  const dateTo = date(value.dateTo ?? value.endDate ?? range.to ?? range.end, "dateTo");
+  const dateFrom = date(dateFromValue, "dateFrom");
+  const dateTo = date(dateToValue, "dateTo");
   if (dateFrom >= dateTo) throw new ApiError(422, "validation_error", "dateFrom must be earlier than dateTo");
   const today = new Date().toISOString().slice(0, 10);
   if (dateTo > today) throw new ApiError(422, "validation_error", "dateTo cannot be in the future", { field: "dateTo", maximum: today });
@@ -339,10 +433,10 @@ function caseInput(value: Record<string, unknown>) {
     symbols: normalizedSymbols,
     dateFrom,
     dateTo,
-    initialCapital: number(value.initialCapital ?? value.capital, "initialCapital", 10_000, 100, 10_000_000),
-    commissionBps: number(value.commissionBps ?? costs.commissionBpsPerSide, "commissionBps", 0, 0, 1_000),
-    slippageBps: number(value.slippageBps ?? costs.slippageBpsPerSide, "slippageBps", 5, 0, 1_000),
-    selectedProfile: value.courtProfile === undefined || value.courtProfile === "balanced"
+    initialCapital: number(initialCapitalValue, "initialCapital", 10_000, 100, 10_000_000),
+    commissionBps: number(commissionValue, "commissionBps", 0, 0, 1_000),
+    slippageBps: number(slippageValue, "slippageBps", 5, 0, 1_000),
+    selectedProfile: profileValue === undefined || profileValue === "balanced"
       ? "balanced"
       : (() => { throw new ApiError(422, "validation_error", "Only the balanced Court profile is available"); })(),
   };
@@ -509,6 +603,10 @@ async function inspectFailure(store: Store, run: CourtRunRecord, failureValue: u
 
 export async function createApp(options: AppOptions = {}): Promise<ApiApp> {
   const allowedOrigins = options.allowedOrigins ?? (process.env.CORS_ORIGINS?.split(",").map((item) => item.trim()).filter(Boolean) || DEFAULT_ORIGINS);
+  const buildId = options.buildId
+    ?? process.env.RAILWAY_GIT_COMMIT_SHA
+    ?? process.env.VERCEL_GIT_COMMIT_SHA
+    ?? process.env.SOURCE_VERSION;
   const ownsPool = !options.pool;
   const pool = options.pool ?? new Pool({
     connectionString: options.databaseUrl ?? process.env.DATABASE_URL ?? "postgresql://strategy_court:strategy_court@localhost/strategy_court",
@@ -614,7 +712,13 @@ export async function createApp(options: AppOptions = {}): Promise<ApiApp> {
         } catch {
           return databaseUnavailable(headers);
         }
-        return json({ status: "ok", queueDepth: queue.size, recoveredJobs, engineVersion: DOMAIN_ENGINE_VERSION }, 200, headers);
+        return json({
+          status: "ok",
+          queueDepth: queue.size,
+          recoveredJobs,
+          engineVersion: DOMAIN_ENGINE_VERSION,
+          ...(buildId ? { buildId } : {}),
+        }, 200, headers);
       }
 
       const session = options.resolveSession
@@ -785,7 +889,16 @@ export async function createApp(options: AppOptions = {}): Promise<ApiApp> {
       }
 
       if (request.method === "GET" && path === "/api/cases") {
-        return json({ cases: await store.listCases(ownerUserId) }, 200, headers);
+        const paged = ["query", "offset", "limit"].some((field) => url.searchParams.has(field));
+        if (!paged) return json({ cases: await store.listCases(ownerUserId) }, 200, headers);
+        const rawQuery = url.searchParams.get("query") ?? "";
+        if (rawQuery.length > 100) {
+          throw new ApiError(422, "validation_error", "query must contain at most 100 characters", { field: "query", maximum: 100 });
+        }
+        const query = rawQuery.trim();
+        const offset = queryInteger(url, "offset", 0, 0, 1_000_000);
+        const limit = queryInteger(url, "limit", 10, 1, 100);
+        return json(await store.listCasesPage(ownerUserId, { query, offset, limit }), 200, headers);
       }
 
       if (request.method === "POST" && path === "/api/cases") {

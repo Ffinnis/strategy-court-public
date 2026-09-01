@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, spyOn, test } from "bun:test";
 import { ENGINE_VERSION } from "@strategy-court/domain";
 import { SAMPLE_STRATEGY } from "@strategy-court/schemas";
-import { logDatabasePoolError, type ApiApp } from "../src/app";
+import { logDatabasePoolError, type ApiApp, type AuthSession } from "../src/app";
 import { AlpacaMarketProvider, FixtureMarketProvider } from "../src/providers/market";
 import { createTestHarness, TEST_USER_ID } from "./test-database";
 
@@ -269,6 +269,243 @@ describe("Stage C verifier regressions", () => {
       });
       expect(impossible.response.status).toBe(422);
       expect(impossible.body.error).toMatchObject({ code: "validation_error", details: { field: "dateFrom" } });
+    }
+  });
+
+  test("rejects unknown case fields while preserving supported aliases", async () => {
+    const app = await harness.app({ courtExecutor: courtResult });
+    const rejected = await request(app, "POST", "/api/cases", {
+      name: "Closed contract",
+      symbols: ["AAPL"],
+      startDate: "2024-01-01",
+      endDate: "2024-12-31",
+      unexpected: true,
+    });
+    expect(rejected.response.status).toBe(422);
+    expect(rejected.body.error).toMatchObject({
+      code: "validation_error",
+      details: { unexpected: ["unexpected"] },
+    });
+    expect((await request(app, "GET", "/api/cases")).body.cases).toHaveLength(0);
+
+    const accepted = await request(app, "POST", "/api/cases", {
+      name: "Supported aliases",
+      description: "Exercises the documented compact aliases.",
+      symbols: ["AAPL"],
+      dateFrom: "2024-01-01",
+      dateTo: "2024-12-31",
+      startDate: "2024-01-01",
+      endDate: "2024-12-31",
+      dateRange: {
+        from: "2024-01-01", start: "2024-01-01",
+        to: "2024-12-31", end: "2024-12-31",
+      },
+      initialCapital: "12000",
+      capital: 12_000,
+      commissionBps: "2",
+      commissionBpsPerSide: 2,
+      costs: { commissionBpsPerSide: 2, slippageBpsPerSide: 7 },
+      slippageBps: 7,
+      slippageBpsPerSide: 7,
+      courtProfile: "balanced",
+      selectedProfile: "balanced",
+      requestId: "alias-request-1",
+    });
+    expect(accepted.response.status).toBe(201);
+    expect(accepted.body.case).toMatchObject({
+      dateFrom: "2024-01-01",
+      dateTo: "2024-12-31",
+      initialCapital: 12_000,
+      commissionBps: 2,
+      slippageBps: 7,
+    });
+
+    const invalidNestedInputs = [
+      {
+        name: "Misspelled date range",
+        symbols: ["AAPL"],
+        dateRange: { start: "2024-01-01", end: "2024-12-31", strat: "2023-01-01" },
+      },
+      {
+        name: "Misspelled costs",
+        symbols: ["AAPL"],
+        startDate: "2024-01-01",
+        endDate: "2024-12-31",
+        costs: { commissionBpsPerSide: 2, slipageBpsPerSide: 99 },
+      },
+    ];
+    for (const invalidInput of invalidNestedInputs) {
+      const invalid = await request(app, "POST", "/api/cases", invalidInput);
+      expect(invalid.response.status).toBe(422);
+      expect(invalid.body.error).toMatchObject({
+        code: "validation_error",
+        details: { path: expect.any(String), unexpected: [expect.any(String)] },
+      });
+    }
+
+    const base = {
+      name: "Conflicting aliases",
+      symbols: ["AAPL"],
+      startDate: "2024-01-01",
+      endDate: "2024-12-31",
+    };
+    const conflictingAliases: Array<{ field: string; input: Record<string, unknown> }> = [
+      { field: "dateFrom", input: { ...base, dateFrom: "2024-02-01" } },
+      { field: "dateFrom", input: { ...base, dateRange: { from: "2024-01-01", start: "2024-02-01", end: "2024-12-31" } } },
+      { field: "dateTo", input: { ...base, dateTo: "2024-11-30" } },
+      { field: "initialCapital", input: { ...base, initialCapital: 10_000, capital: 20_000 } },
+      { field: "commissionBps", input: { ...base, commissionBps: 1, commissionBpsPerSide: 2 } },
+      { field: "slippageBps", input: { ...base, slippageBps: 5, costs: { slippageBpsPerSide: 6 } } },
+      { field: "courtProfile", input: { ...base, courtProfile: "balanced", selectedProfile: "conservative" } },
+    ];
+    for (const conflict of conflictingAliases) {
+      const rejectedConflict = await request(app, "POST", "/api/cases", conflict.input);
+      expect(rejectedConflict.response.status).toBe(422);
+      expect(rejectedConflict.body.error).toMatchObject({
+        code: "validation_error",
+        details: { field: conflict.field, aliases: expect.any(Array) },
+      });
+    }
+
+    const invalidNumericAliases: Array<{ field: string; input: Record<string, unknown> }> = [
+      { field: "commissionBps", input: { ...base, commissionBps: true } },
+      { field: "slippageBps", input: { ...base, slippageBps: [] } },
+      { field: "initialCapital", input: { ...base, initialCapital: {} } },
+      { field: "capital", input: { ...base, capital: "   " } },
+      { field: "costs.commissionBpsPerSide", input: { ...base, costs: { commissionBpsPerSide: [2] } } },
+    ];
+    for (const invalidAlias of invalidNumericAliases) {
+      const rejectedNumeric = await request(app, "POST", "/api/cases", invalidAlias.input);
+      expect(rejectedNumeric.response.status).toBe(422);
+      expect(rejectedNumeric.body.error).toMatchObject({
+        code: "validation_error",
+        details: { field: invalidAlias.field },
+      });
+    }
+
+    const malformedStringAliases: Array<{ field: string; input: Record<string, unknown> }> = [
+      { field: "dateFrom", input: { ...base, dateFrom: ["2024-01-01"] } },
+      { field: "startDate", input: { ...base, startDate: ["2024-01-01"] } },
+      { field: "dateRange.from", input: { ...base, dateRange: { from: ["2024-01-01"] } } },
+      { field: "dateRange.start", input: { ...base, dateRange: { start: ["2024-01-01"] } } },
+      { field: "dateTo", input: { ...base, dateTo: ["2024-12-31"] } },
+      { field: "endDate", input: { ...base, endDate: ["2024-12-31"] } },
+      { field: "dateRange.to", input: { ...base, dateRange: { to: ["2024-12-31"] } } },
+      { field: "dateRange.end", input: { ...base, dateRange: { end: ["2024-12-31"] } } },
+      { field: "courtProfile", input: { ...base, courtProfile: ["balanced"] } },
+      { field: "selectedProfile", input: { ...base, selectedProfile: ["balanced"] } },
+      { field: "dateFrom", input: { ...base, dateFrom: 20240101 } },
+      { field: "dateTo", input: { ...base, dateTo: true } },
+      { field: "courtProfile", input: { ...base, courtProfile: {} } },
+      { field: "selectedProfile", input: { ...base, selectedProfile: false } },
+    ];
+    for (const malformedAlias of malformedStringAliases) {
+      const rejectedString = await request(app, "POST", "/api/cases", malformedAlias.input);
+      expect(rejectedString.response.status).toBe(422);
+      expect(rejectedString.body.error).toMatchObject({
+        code: "validation_error",
+        details: { field: malformedAlias.field },
+      });
+    }
+
+    const nullAliases: Array<{ field: string; input: Record<string, unknown> }> = [
+      { field: "dateFrom", input: { ...base, dateFrom: null } },
+      { field: "startDate", input: { ...base, startDate: null } },
+      { field: "dateRange.from", input: { ...base, dateRange: { from: null } } },
+      { field: "dateRange.start", input: { ...base, dateRange: { start: null } } },
+      { field: "dateTo", input: { ...base, dateTo: null } },
+      { field: "endDate", input: { ...base, endDate: null } },
+      { field: "dateRange.to", input: { ...base, dateRange: { to: null } } },
+      { field: "dateRange.end", input: { ...base, dateRange: { end: null } } },
+      { field: "initialCapital", input: { ...base, initialCapital: null } },
+      { field: "capital", input: { ...base, capital: null } },
+      { field: "commissionBps", input: { ...base, commissionBps: null } },
+      { field: "commissionBpsPerSide", input: { ...base, commissionBpsPerSide: null } },
+      { field: "costs.commissionBpsPerSide", input: { ...base, costs: { commissionBpsPerSide: null } } },
+      { field: "slippageBps", input: { ...base, slippageBps: null } },
+      { field: "slippageBpsPerSide", input: { ...base, slippageBpsPerSide: null } },
+      { field: "costs.slippageBpsPerSide", input: { ...base, costs: { slippageBpsPerSide: null } } },
+      { field: "courtProfile", input: { ...base, courtProfile: null } },
+      { field: "selectedProfile", input: { ...base, selectedProfile: null } },
+    ];
+    for (const nullAlias of nullAliases) {
+      const rejectedNull = await request(app, "POST", "/api/cases", nullAlias.input);
+      expect(rejectedNull.response.status).toBe(422);
+      expect(rejectedNull.body.error).toMatchObject({
+        code: "validation_error",
+        details: { field: nullAlias.field },
+      });
+    }
+
+    const nullableContainers = await request(app, "POST", "/api/cases", {
+      ...base,
+      name: "Nullable alias containers",
+      dateRange: null,
+      costs: null,
+    });
+    expect(nullableContainers.response.status).toBe(201);
+    expect((await request(app, "GET", "/api/cases")).body.cases).toHaveLength(2);
+  });
+
+  test("filters and pages case lists in the owner-scoped database query", async () => {
+    const database = await harness.createDatabase();
+    const app = await harness.app({ courtExecutor: courtResult }, database);
+    const create = async (name: string, description: string, symbols: string[]) => {
+      const created = await request(app, "POST", "/api/cases", {
+        name, description, symbols, startDate: "2024-01-01", endDate: "2024-12-31",
+      });
+      return created.body.case.id as string;
+    };
+    const alphaId = await create("Alpha trend", "SPY moving average evidence", ["AAPL"]);
+    const qqqId = await create("QQQ pullback", "RSI reversal evidence", ["QQQ"]);
+    const valueId = await create("Value reversion", "MSFT mean reversion evidence", ["MSFT"]);
+    await database.pool.query(`UPDATE court_cases SET updated_at = CASE id
+      WHEN $1 THEN '2026-09-01T10:00:00Z'::timestamptz
+      WHEN $2 THEN '2026-09-01T09:00:00Z'::timestamptz
+      WHEN $3 THEN '2026-09-01T08:00:00Z'::timestamptz
+      ELSE updated_at END`, [alphaId, qqqId, valueId]);
+
+    const otherSession: AuthSession = { user: { id: "case-list-other", email: "other-list@example.test", name: "Other list owner" } };
+    await database.pool.query(
+      `INSERT INTO "user" (id, name, email, "emailVerified", "createdAt", "updatedAt") VALUES ($1, $2, $3, TRUE, NOW(), NOW())`,
+      [otherSession.user.id, otherSession.user.name, otherSession.user.email],
+    );
+    const other = await harness.app({ courtExecutor: courtResult, resolveSession: async () => otherSession }, database);
+    await request(other, "POST", "/api/cases", {
+      name: "QQQ private case", description: "Must not leak to the first owner.", symbols: ["QQQ"],
+      startDate: "2024-01-01", endDate: "2024-12-31",
+    });
+
+    const legacy = await request(app, "GET", "/api/cases");
+    expect(legacy.body).toEqual({ cases: expect.any(Array) });
+    expect(legacy.body.cases).toHaveLength(3);
+
+    const searched = await request(app, "GET", "/api/cases?query=qqq&offset=0&limit=10");
+    expect(searched.body).toEqual({
+      cases: [expect.objectContaining({ id: qqqId, name: "QQQ pullback" })],
+      total: 1,
+      offset: 0,
+      nextOffset: null,
+    });
+    const descriptionSearch = await request(app, "GET", "/api/cases?query=spy&limit=10");
+    expect(descriptionSearch.body.cases.map((item: Record<string, unknown>) => item.id)).toEqual([alphaId]);
+    expect((await request(app, "GET", "/api/cases?query=%25&limit=10")).body.total).toBe(0);
+
+    const page = await request(app, "GET", "/api/cases?offset=1&limit=1");
+    expect(page.body).toMatchObject({ total: 3, offset: 1, nextOffset: 2 });
+    expect(page.body.cases.map((item: Record<string, unknown>) => item.id)).toEqual([qqqId]);
+    expect((await request(app, "GET", "/api/cases?offset=100&limit=10")).body).toEqual({
+      cases: [], total: 3, offset: 100, nextOffset: null,
+    });
+
+    for (const path of [
+      "/api/cases?offset=-1", "/api/cases?offset=1.5", "/api/cases?limit=0", "/api/cases?limit=101",
+      `/api/cases?query=${"x".repeat(101)}`,
+      `/api/cases?query=${encodeURIComponent(" ".repeat(101))}`,
+    ]) {
+      const invalid = await request(app, "GET", path);
+      expect(invalid.response.status).toBe(422);
+      expect(invalid.body.error.code).toBe("validation_error");
     }
   });
 

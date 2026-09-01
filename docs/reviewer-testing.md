@@ -8,10 +8,18 @@ Use ChatGPT's in-app browser, or Chrome 149+ with `chrome://flags/#enable-webmcp
 
 Create an email/password account through the app. Google login is not required. Cases are private to the signed-in account; no existing user's credentials or provider API keys are needed in the browser. If the submission provides a separate judge account, use those credentials instead. Do not put passwords in the public repository.
 
+## Fast judge path
+
+Use this prompt after signing in:
+
+> Open the prepared sample if it is available. Otherwise choose the synthetic software demo and say clearly that its generated prices test the investigation workflow, not market performance. Read the active rules, leave confirmation to me, run Court after I confirm, then select the failed test that most limits confidence. Keep the returned verdict and IDs. Do not tune the strategy or search for a better result.
+
+This path needs no shared credentials. If the saved sample is unavailable, choose **Use synthetic software demo** in the visible app before asking the agent to continue. The synthetic route exercises the same case, confirmation, Court, evidence-selection, decision and report workflow. It does not establish anything about the named securities.
+
 ## Exercise WebMCP
 
-1. Choose **Open sample** to open the prepared RSI strategy with saved Alpaca history. If it is unavailable, ask the operator to [prepare it](./prepared-sample.md). You can also ask an agent to call `create_case` with your idea, reviewed settings, and a stable request ID.
-2. Ask the agent to call `get_case_context` with `{}`. Check `currentState.caseId` against the visible case. Without an open case, the tool explains how to create one; it does not invent an ID. Repeating `create_case` with the same request ID and settings must return the original case.
+1. Choose **Open sample** to open the prepared RSI strategy with saved Alpaca history. If it is unavailable, choose **Use synthetic software demo** for a complete software-workflow test, or ask the operator to [prepare the real-data sample](./prepared-sample.md). You can also ask an agent to call `create_case` with your idea, reviewed settings, and a stable request ID.
+2. Without an open case, ask the agent to call `list_cases`, then `open_case` with an exact returned ID. The visible app must navigate to that owned investigation. With a case open, call `get_case_context` with `{}` and check `currentState.caseId` against the visible case. Repeating `create_case` with the same request ID and settings must return the original case.
 3. For a new strategy, ask for a daily long-only rule that buys above SMA 120 and sells below SMA 120, using next-open execution and five basis points of slippage per side. The agent first calls `list_indicator_catalog` with `ids: ["sma"]` to read exact parameter names, then `create_strategy_draft`. Indicators use a structured `arguments` array; compound rules use `all`, `any`, or `not`, not executable JavaScript.
 4. Review the visible rules and confirm them yourself. An agent tool cannot bypass this confirmation.
 5. Ask the agent to run the confirmed version through `run_court`. Use the case ID, version ID, locked dates and symbols from context. Prepared samples default to `saved_sample`; ordinary cases default to `refresh`. For offline software testing only, explicitly choose **Synthetic demo** or pass `dataSnapshotPolicy: "frozen"`. Generated prices are not actual market evidence.

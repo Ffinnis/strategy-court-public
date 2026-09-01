@@ -83,3 +83,11 @@ test("health reports unavailable until Postgres accepts queries", async () => {
   expect(await unavailable.json()).toMatchObject({ code: "AUTH_SERVICE_UNAVAILABLE" });
   expect(healthy.status).toBe(200);
 });
+
+test("health identifies the deployed build when the host provides an identifier", async () => {
+  const app = await harness.app({ buildId: "deployment-build-42" });
+  const response = await app.fetch(new Request("http://api.test/api/health"));
+
+  expect(response.status).toBe(200);
+  expect(await response.json()).toMatchObject({ buildId: "deployment-build-42" });
+});

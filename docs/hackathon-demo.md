@@ -16,6 +16,14 @@ Use the prepared `rsi-pullback` sample described in [prepared-sample.md](./prepa
 
 Real-data recording is blocked until the operator supplies provider access and confirms permission to show and export that evidence. The local synthetic QA cases are suitable for rehearsing interactions only. Do not describe their returns as actual security performance.
 
+Set a preparation cutoff before recording. If the prepared sample has not passed the full production check by that cutoff, use **Synthetic software demo** and keep the generated-data label visible. Do not spend recording time showing the failed sample request.
+
+For the synthetic version, replace the saved-history narration with:
+
+> "These are generated daily prices used to test the investigation workflow. They are not actual QQQ or SPY history. The agent and I still share the same rules, Court tests, evidence selection and decision record."
+
+The rest of the recording stays the same. Report the actual synthetic verdict, select actual returned evidence, and avoid any claim about market performance.
+
 Before recording, capture the case, version and run IDs, provider, feed, adjustment, snapshot hash, engine version and actual verdict. Choose one returned failure or trade and record its exact ID. Leave these values blank until the run exists. If the run is Invalid, explain the reason and stop the investigation; do not narrate missing results.
 
 ## The 2:40 recording

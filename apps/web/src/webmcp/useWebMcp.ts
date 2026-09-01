@@ -13,7 +13,7 @@ import {
 import { getCurrentScope, onScopeDispose, readonly, ref, watch, type DeepReadonly, type Ref } from "vue";
 import { ApiError, apiRequest, unwrap } from "@/services/api";
 import { normalizeCase, useCourtStore } from "@/stores/court";
-import { catalogPage, ToolResults } from "@/webmcp/results";
+import { caseListPage, catalogPage, reportBrief, ToolResults } from "@/webmcp/results";
 import type { CaseInput, StrategyDefinition, StrategyVersion } from "@/types";
 import { validateCaseIntake } from "@/lib/case-intake-validation";
 import { investigationGuidance } from "@/services/investigationGuidance";
@@ -161,7 +161,6 @@ const formulaArgument = oneOf(
   { type: "number", minimum: -1e12, maximum: 1e12 },
   { type: "boolean" },
   { type: "string", minLength: 1, maxLength: 64 },
-  { $ref: "#/$defs/formula" },
 );
 const indicatorDependencies: Schema = {
   type: "array",
@@ -233,7 +232,12 @@ function snapshot(store: ReturnType<typeof useCourtStore>) {
   };
 }
 
-type ToolHandler = (input: Record<string, unknown>, signal: AbortSignal) => Promise<unknown>;
+interface ToolResponseContext {
+  state(message: string, data: unknown, changedIds?: string[]): unknown;
+  reference(data: unknown): ReturnType<ToolResults["reference"]>;
+  rebase(): void;
+}
+type ToolHandler = (input: Record<string, unknown>, signal: AbortSignal, response: ToolResponseContext) => Promise<unknown>;
 
 export type WebMcpRegistrationStatus = "unsupported" | "registering" | "ready" | "partial" | "failed";
 export interface WebMcpRegistrationState {
@@ -243,35 +247,59 @@ export interface WebMcpRegistrationState {
   errors: WebMcpRegistrationFailure[];
 }
 
-export function useWebMcp(enabled: Readonly<Ref<boolean>> = ref(true), navigateToCase?: (caseId: string) => Promise<unknown>): DeepReadonly<Ref<WebMcpRegistrationState>> {
+export function useWebMcp(
+  enabled: Readonly<Ref<boolean>> = ref(true),
+  navigateToCase?: (caseId: string) => Promise<unknown>,
+  accountId?: Readonly<Ref<string | null>>,
+): DeepReadonly<Ref<WebMcpRegistrationState>> {
   const store = useCourtStore();
   const registration = ref<WebMcpRegistrationState>({ status: "registering", expectedToolNames: [], registeredToolNames: [], errors: [] });
   const registrations: WebMcpRegistrations = new Map();
   const results = new ToolResults();
-  watch(() => [enabled.value, store.currentCase?.id], () => results.clear(), { flush: "sync" });
+  let accountGeneration = 0;
+  watch([
+    () => enabled.value,
+    () => accountId?.value ?? null,
+    () => store.currentCase?.id,
+  ], () => results.clear(), { flush: "sync" });
+  if (accountId) watch(accountId, (next, previous) => {
+    if (next === previous) return;
+    accountGeneration += 1;
+    store.clearCaseSession();
+  }, { flush: "sync" });
   let activeContext: ModelContext | null = null;
   let disposed = false;
   let queue = Promise.resolve();
 
-  const state = (message: string, data: unknown, changedIds: string[] = []) => {
+  const state = (scope: number, message: string, data: unknown, changedIds: string[] = []) => {
     const envelope = { ok: true, message, changedIds, currentState: snapshot(store) };
-    return { ...envelope, data: results.pack(data, envelope) };
+    return { ...envelope, data: results.pack(data, envelope, scope) };
   };
   const execute = (handler: ToolHandler): ModelContextTool["execute"] => async (input, options) => {
     const signal = options?.signal ?? new AbortController().signal;
+    const executionAccount = accountGeneration;
+    let resultScope = results.scope();
+    const response: ToolResponseContext = {
+      state: (message, data, changedIds = []) => state(resultScope, message, data, changedIds),
+      reference: data => results.reference(data, resultScope),
+      rebase: () => { resultScope = results.scope(); },
+    };
     try {
       signal.throwIfAborted();
-      const result = await handler(input, signal);
+      const result = await handler(input, signal, response);
       signal.throwIfAborted();
+      if (executionAccount !== accountGeneration || !results.isCurrent(resultScope)) {
+        throw new DOMException("The account or case changed while this tool was running.", "AbortError");
+      }
       return result;
     } catch (error) {
-      if (signal.aborted) throw signal.reason ?? error;
+      if (signal.aborted || executionAccount !== accountGeneration || !results.isCurrent(resultScope)) throw signal.reason ?? error;
       const message = (error instanceof Error ? error.message : "The tool could not complete the request.").slice(0, 1000);
       const apiError = error instanceof ApiError ? error : null;
       store.error = message;
       let details: unknown = null;
       try {
-        details = results.pack(apiError?.details ?? null, { message, currentState: snapshot(store) });
+        details = results.pack(apiError?.details ?? null, { message, currentState: snapshot(store) }, resultScope);
       } catch {
         details = { omitted: true, reason: "Error details exceed the browser evidence cache." };
       }
@@ -285,6 +313,19 @@ export function useWebMcp(enabled: Readonly<Ref<boolean>> = ref(true), navigateT
     }
   };
   const agentApi = (path: string, signal: AbortSignal, init: RequestInit = {}) => apiRequest<unknown>(path, { ...init, signal }, "agent");
+  const caseListPath = (input: Record<string, unknown>) => {
+    if (input.query !== undefined && typeof input.query !== "string") throw new Error("query must be a string.");
+    const query = String(input.query ?? "").trim();
+    const offset = input.offset === undefined ? 0 : Number(input.offset);
+    const limit = input.limit === undefined ? 10 : Number(input.limit);
+    if (query.length > 100) throw new Error("query must contain at most 100 characters.");
+    if (!Number.isSafeInteger(offset) || offset < 0 || !Number.isSafeInteger(limit) || limit < 1 || limit > 10) {
+      throw new Error("Use a nonnegative offset and a limit from 1 to 10.");
+    }
+    const params = new URLSearchParams({ offset: String(offset), limit: String(limit) });
+    if (query) params.set("query", query);
+    return `/api/cases?${params}`;
+  };
   const visibleCase = (input: Record<string, unknown>) => {
     const current = store.currentCase;
     if (!current) throw new Error("No active Strategy Court case. Create or open a case in the visible app, then retry this tool.");
@@ -296,11 +337,64 @@ export function useWebMcp(enabled: Readonly<Ref<boolean>> = ref(true), navigateT
   const tools = (): ModelContextTool[] => {
     const result: ModelContextTool[] = [
       {
+        name: "list_cases",
+        title: "List investigations",
+        description: "List the signed-in user's recent Strategy Court cases. Search by name, description, or symbol, then use open_case with an exact ID.",
+        inputSchema: object({
+          query: { type: "string", maxLength: 100 },
+          offset: { type: "integer", minimum: 0 },
+          limit: { type: "integer", minimum: 1, maximum: 10, default: 10 },
+        }),
+        annotations: { readOnlyHint: true, untrustedContentHint: true },
+        execute: execute(async (input, signal, response) => response.state(
+          "Returned recent investigations. Use open_case with an exact case ID to continue in the visible app.",
+          caseListPage(await agentApi(caseListPath(input), signal)),
+        )),
+      },
+      {
+        name: "open_case",
+        title: "Open investigation",
+        description: "Open an owned Strategy Court case in the visible app. Use a case ID returned by list_cases.",
+        inputSchema: object({ caseId: described(id, "Owned case ID returned by list_cases.") }, ["caseId"]),
+        annotations: { readOnlyHint: true, untrustedContentHint: true },
+        execute: execute(async (input, signal, response) => {
+          const requestedId = String(input.caseId);
+          if (!await store.loadCase(requestedId, "agent", signal, true) || store.currentCase?.id !== requestedId) {
+            throw new Error(store.error ?? "The requested case could not be opened.");
+          }
+          const current = store.currentCase;
+          if (!navigateToCase) throw new Error("This app session cannot navigate to a case.");
+          store.prepareCaseRouteHandoff(current.id);
+          try {
+            await navigateToCase(current.id);
+          } catch (error) {
+            store.consumeCaseRouteHandoff(current.id);
+            throw error;
+          }
+          if (store.currentCase?.id !== current.id) throw new DOMException("Case navigation changed before the investigation opened.", "AbortError");
+          response.rebase();
+          return response.state(`Opened case ${current.id}. The returned state is the loaded visible investigation.`, {
+            case: {
+              id: current.id,
+              name: current.name,
+              description: current.description,
+              symbols: current.symbols,
+              startDate: current.startDate,
+              endDate: current.endDate,
+              status: current.status,
+              activeVersionId: current.activeVersionId,
+            },
+            path: `/case/${current.id}`,
+            opened: true,
+          });
+        }),
+      },
+      {
         name: "create_case", title: "Create case",
         description: "Create and open a case from the user's stated trading idea and proposed test settings. Do not invent missing entry or exit rules. This saves setup only; draft exact rules separately and leave confirmation to the user. Reuse requestId on retries.",
         inputSchema: object(caseIntakeProperties, Object.keys(caseIntakeProperties)),
         annotations:{readOnlyHint:false,untrustedContentHint:true},
-        execute: execute(async (input,signal) => {
+        execute: execute(async (input,signal,response) => {
           if (!input || typeof input !== "object" || Array.isArray(input)) throw new Error("Expected case settings as an object.");
           const unknownFields = Object.keys(input).filter(key => !Object.hasOwn(caseIntakeProperties, key));
           if (unknownFields.length) throw new Error(`Unsupported case fields: ${unknownFields.join(", ")}.`);
@@ -317,8 +411,10 @@ export function useWebMcp(enabled: Readonly<Ref<boolean>> = ref(true), navigateT
           const id = await store.createCase(input as unknown as CaseInput,false,"agent",signal,requestId);
           if (!id) throw new Error(store.error ?? "Case creation failed.");
           let opened = false;
-          try { if (navigateToCase) { await navigateToCase(id); opened = true; } } catch { /* The case is saved; never create again just to navigate. */ }
-          return state(opened ? "Case opened. Read the indicator catalog, then draft the exact rules for human review." : `Case saved. Open /case/${id} to continue; do not repeat creation.`,
+          try { if (navigateToCase) { store.prepareCaseRouteHandoff(id); await navigateToCase(id); opened = true; } } catch { store.consumeCaseRouteHandoff(id); /* The case is saved; never create again just to navigate. */ }
+          if (store.currentCase?.id !== id) throw new DOMException("Case navigation changed after creation.", "AbortError");
+          response.rebase();
+          return response.state(opened ? "Case opened. Read the indicator catalog, then draft the exact rules for human review." : `Case saved. Open /case/${id} to continue; do not repeat creation.`,
             {caseId:id,path:`/case/${id}`,opened,settings:store.currentCase ? {symbols:store.currentCase.symbols,startDate:store.currentCase.startDate,endDate:store.currentCase.endDate,initialCapital:store.currentCase.initialCapital,costs:store.caseCosts} : null},[id]);
         }),
       },
@@ -328,9 +424,9 @@ export function useWebMcp(enabled: Readonly<Ref<boolean>> = ref(true), navigateT
         description: "Read case IDs, locked settings, verdicts, and next actions. Use detail=strategy for exact active rules without price history, or detail=full for all evidence in pages.",
         inputSchema: object({ caseId: optionalCaseId, detail: { type: "string", enum: ["summary", "strategy", "full"], default: "summary" } }),
         annotations: { readOnlyHint: true, untrustedContentHint: true },
-        execute: execute(async (input, signal) => {
+        execute: execute(async (input, signal, response) => {
           const requestedId = typeof input.caseId === "string" && input.caseId ? input.caseId : store.currentCase?.id;
-          if (!requestedId) return state("No case is active. Use create_case with the user's stated idea, or open an existing case.", { case: null });
+          if (!requestedId) return response.state("No case is active. Use create_case with the user's stated idea, or open an existing case.", { case: null });
           let current;
           if (store.currentCase?.id === requestedId) {
             if (!await store.refreshCase("agent", signal)) throw new Error(store.error ?? "The active case could not be refreshed.");
@@ -364,7 +460,7 @@ export function useWebMcp(enabled: Readonly<Ref<boolean>> = ref(true), navigateT
             id: current.id, activeVersionId,
             version: current.versions.find(version => version.id === activeVersionId) ?? null,
           };
-          return state(`Returned case ${requestedId}. Mutations require this case to be open in the app.`, { case: input.detail === "full" ? current : input.detail === "strategy" ? strategy : summary });
+          return response.state(`Returned case ${requestedId}. Mutations require this case to be open in the app.`, { case: input.detail === "full" ? current : input.detail === "strategy" ? strategy : summary });
         }),
       },
       {
@@ -377,7 +473,7 @@ export function useWebMcp(enabled: Readonly<Ref<boolean>> = ref(true), navigateT
           offset: { type: "integer", minimum: 0 }, limit: { type: "integer", minimum: 1, maximum: 10 },
         }),
         annotations: { readOnlyHint: true, untrustedContentHint: true },
-        execute: execute(async (input, signal) => state(
+        execute: execute(async (input, signal, response) => response.state(
           "Returned the requested indicator page. Follow nextOffset for more; pass ids for exact parameters.",
           catalogPage(await agentApi("/api/indicators", signal), input),
         )),
@@ -387,7 +483,13 @@ export function useWebMcp(enabled: Readonly<Ref<boolean>> = ref(true), navigateT
         description: "Read a bounded page of a large tool result. Concatenate jsonText pages in offset order, then parse JSON. Results expire after five minutes or when the case/session changes.",
         inputSchema: object({ resultId: id, offset: { type: "integer", minimum: 0, default: 0 } }, ["resultId"]),
         annotations: { readOnlyHint: true, untrustedContentHint: true },
-        execute: execute(async input => state("Returned one result page. Continue at nextOffset until it is null.", results.read(String(input.resultId), Number(input.offset ?? 0)))),
+        execute: execute(async input => ({
+          ok: true,
+          message: "Returned one result page. Continue at nextOffset until it is null.",
+          changedIds: [],
+          currentState: snapshot(store),
+          data: results.read(String(input.resultId), Number(input.offset ?? 0)),
+        })),
       },
       {
         name: "create_strategy_draft",
@@ -399,7 +501,7 @@ export function useWebMcp(enabled: Readonly<Ref<boolean>> = ref(true), navigateT
           interpretation: { type: "string", minLength: 1, maxLength: 4000, description: "Plain-language explanation of the exact rules, assumptions, and unresolved ambiguity." },
         }, ["caseId", "definition", "interpretation"])),
         annotations: { readOnlyHint: false, untrustedContentHint: false },
-        execute: execute(async (input, signal) => {
+        execute: execute(async (input, signal, response) => {
           const current = visibleCase(input);
           const before = new Set(current.versions.map((item) => item.id));
           const resolved = transformAgentFormula(input.definition) as StrategyDefinition;
@@ -407,7 +509,7 @@ export function useWebMcp(enabled: Readonly<Ref<boolean>> = ref(true), navigateT
           const changed = store.currentCase?.versions.filter((item) => !before.has(item.id)).map((item) => item.id) ?? [];
           if (!changed.length) throw new Error("The draft request completed without returning a new strategy version ID.");
           store.activeTab = "strategy";
-          return state(`Created unconfirmed strategy draft ${changed[0]}. Ask the user to review and confirm it before running the Court.`, { changedVersionIds: changed }, changed);
+          return response.state(`Created unconfirmed strategy draft ${changed[0]}. Ask the user to review and confirm it before running the Court.`, { changedVersionIds: changed }, changed);
         }),
       },
       {
@@ -427,12 +529,12 @@ export function useWebMcp(enabled: Readonly<Ref<boolean>> = ref(true), navigateT
           $defs: { indicatorInput, formula, formulaArgument },
         },
         annotations: { readOnlyHint: false, untrustedContentHint: false },
-        execute: execute(async (input, signal) => {
-          const response = await agentApi("/api/indicators", signal, { method: "POST", body: JSON.stringify({ ...input, formula: transformAgentFormula(input.formula) }) });
-          const indicator = unwrap<Record<string, unknown>>(response, "indicator");
+        execute: execute(async (input, signal, response) => {
+          const apiResponse = await agentApi("/api/indicators", signal, { method: "POST", body: JSON.stringify({ ...input, formula: transformAgentFormula(input.formula) }) });
+          const indicator = unwrap<Record<string, unknown>>(apiResponse, "indicator");
           const changed = indicator?.id ? [String(indicator.id)] : [];
           if (!changed.length) throw new Error("The API did not return a created indicator ID.");
-          return state(
+          return response.state(
             `Created custom indicator ${changed[0]}. Owner-scoped strategy drafts can reference this ID and the server compiles it into the immutable strategy tree.`,
             { indicator, strategyExecutionSupported: true },
             changed,
@@ -440,6 +542,16 @@ export function useWebMcp(enabled: Readonly<Ref<boolean>> = ref(true), navigateT
         }),
       },
     ];
+
+    if (!store.currentCase) {
+      const deferredUntilCaseOpen = new Set([
+        "get_case_context",
+        "list_indicator_catalog",
+        "create_strategy_draft",
+        "create_custom_indicator",
+      ]);
+      return result.filter((tool) => !deferredUntilCaseOpen.has(tool.name));
+    }
 
     if (store.confirmed) {
       const draftIndex = result.findIndex((tool) => tool.name === "create_strategy_draft");
@@ -460,7 +572,7 @@ export function useWebMcp(enabled: Readonly<Ref<boolean>> = ref(true), navigateT
           },
         }, ["caseId", "strategyVersionId", "startDate", "endDate", "courtProfile"]),
         annotations: { readOnlyHint: false, untrustedContentHint: false },
-        execute: execute(async (input, signal) => {
+        execute: execute(async (input, signal, response) => {
           const current = visibleCase(input);
           if (input.strategyVersionId !== store.activeVersion?.id) throw new Error("Use the active confirmed strategyVersionId returned by get_case_context.");
           if (input.startDate !== current.startDate || input.endDate !== current.endDate) throw new Error(`Use the locked case range ${current.startDate} through ${current.endDate}.`);
@@ -468,7 +580,7 @@ export function useWebMcp(enabled: Readonly<Ref<boolean>> = ref(true), navigateT
           const runId = await store.runCourt(policy, "balanced", "agent", signal);
           if (!runId) throw new Error(store.error ?? "Court did not create a completed run.");
           const run = store.currentCase?.runs.find((item) => item.id === runId);
-          return state(`Court run ${runId} ended with status ${run?.status ?? "unknown"}. Call get_case_context for its verdicts or invalid reason.`, {
+          return response.state(`Court run ${runId} ended with status ${run?.status ?? "unknown"}. Call get_case_context for its verdicts or invalid reason.`, {
             changedRunId: runId,
             runId,
             runState: run?.status ?? "completed",
@@ -486,12 +598,12 @@ export function useWebMcp(enabled: Readonly<Ref<boolean>> = ref(true), navigateT
         description:"Save a private draft conclusion citing this run's evidence. The user reviews and confirms it in the Court screen. A rejection is a valid outcome; do not automatically optimize a weak strategy.",
         inputSchema: object({caseId,runId:id,fields:decisionFieldsSchema,requestId:{type:"string",minLength:8,maxLength:120,pattern:"^[A-Za-z0-9_-]+$"}},["caseId","runId","fields","requestId"]),
         annotations:{readOnlyHint:false,untrustedContentHint:true},
-        execute:execute(async (input,signal)=>{
+        execute:execute(async (input,signal,response)=>{
           visibleCase(input);
           if (input.runId !== store.latestRun?.id) throw new Error("Use the currently displayed completed run.");
           const decision = await store.proposeDecision(parseDecisionFields(input.fields),String(input.requestId),"agent",signal);
           if (!decision) throw new Error(store.decisionError ?? "Could not save decision draft.");
-          return state("Decision draft saved. Ask the user to review and confirm it in the Court screen.",{decision},[decision.id]);
+          return response.state("Decision draft saved. Ask the user to review and confirm it in the Court screen.",{decision},[decision.id]);
         }),
       },
       {
@@ -499,11 +611,11 @@ export function useWebMcp(enabled: Readonly<Ref<boolean>> = ref(true), navigateT
         description:"Select one trade in the displayed completed run and focus its chart period. Read assumptions and historical bars for that exact trade.",
         inputSchema:object({runId:id,tradeId:id},["runId","tradeId"]),
         annotations:{readOnlyHint:true,untrustedContentHint:true},
-        execute:execute(async(input,signal)=>{
+        execute:execute(async(input,signal,response)=>{
           await store.selectEvidence(String(input.runId),{kind:"trade",id:String(input.tradeId)},"agent",signal);
           const trade = store.selectedTrade;
-          if (!trade) return state("Selection changed while inspecting. Read the current context.",{trade:null});
-          return state("Selected the trade in the visible inspector and chart.",{trade,assumptions:store.result?.assumptions,
+          if (!trade) return response.state("Selection changed while inspecting. Read the current context.",{trade:null});
+          return response.state("Selected the trade in the visible inspector and chart.",{trade,assumptions:store.result?.assumptions,
             marketBars:store.result?.marketEvidence[trade.symbol]?.filter(bar=>bar.date>=trade.entryDate && bar.date<=trade.exitDate),
             relatedFailureIds:store.result?.failures.filter(item=>item.dateRange && item.dateRange.start<=trade.exitDate && item.dateRange.end>=trade.entryDate && item.symbols.includes(trade.symbol)).map(item=>item.id)});
         }),
@@ -514,9 +626,9 @@ export function useWebMcp(enabled: Readonly<Ref<boolean>> = ref(true), navigateT
         description: "Load trades, market regime, indicator values, costs, and equity evidence for one failure from the active completed Court run.",
         inputSchema: object({ runId: described(id, "Completed Court run ID from get_case_context."), failureId: described(id, "Failure ID attached to a returned verdict.") }, ["runId", "failureId"]),
         annotations: { readOnlyHint: true, untrustedContentHint: true },
-        execute: execute(async (input, signal) => {
+        execute: execute(async (input, signal, response) => {
           const failure = await store.selectEvidence(String(input.runId), {kind:"failure",id:String(input.failureId)}, "agent", signal);
-          return state(failure ? `Selected failure ${String(input.failureId)}. Use the evidence to assess whether to stop or investigate further.` : "Selection changed during inspection. Read the current context.", { failure });
+          return response.state(failure ? `Selected failure ${String(input.failureId)}. Use the evidence to assess whether to stop or investigate further.` : "Selection changed during inspection. Read the current context.", { failure });
         }),
       },
       {
@@ -525,7 +637,7 @@ export function useWebMcp(enabled: Readonly<Ref<boolean>> = ref(true), navigateT
         description: "Create and evaluate one to three controlled variants of the active strategy after inspecting a concrete Court weakness.",
         inputSchema: withStrategy(object({ caseId, variants: { type: "array", minItems: 1, maxItems: 3, items: agentVariant, description: "One to three distinct hypotheses with exact structured patches." } }, ["caseId", "variants"])),
         annotations: { readOnlyHint: false, untrustedContentHint: false },
-        execute: execute(async (input, signal) => {
+        execute: execute(async (input, signal, response) => {
           visibleCase(input);
           const before = new Set(store.variants.map((item: StrategyVersion) => item.id));
           const variants = transformAgentFormula(input.variants) as Array<Record<string, unknown>>;
@@ -534,7 +646,7 @@ export function useWebMcp(enabled: Readonly<Ref<boolean>> = ref(true), navigateT
           const changed = store.variants.filter((item: StrategyVersion) => !before.has(item.id)).map((item: StrategyVersion) => item.id);
           if (!changed.length) throw new Error("The variant request completed without returning new strategy version IDs.");
           store.activeTab = "variants";
-          return state(`Created and evaluated ${changed.length} controlled variant${changed.length === 1 ? "" : "s"}. Compare every returned version next.`, { changedVersionIds: changed }, changed);
+          return response.state(`Created and evaluated ${changed.length} controlled variant${changed.length === 1 ? "" : "s"}. Compare every returned version next.`, { changedVersionIds: changed }, changed);
         }),
       },
       {
@@ -543,13 +655,13 @@ export function useWebMcp(enabled: Readonly<Ref<boolean>> = ref(true), navigateT
         description: "Compare exact rule changes, metrics, verdicts, assumptions, and evaluation-contamination labels for two to four active-case versions.",
         inputSchema: object({ caseId, versionIds: { type: "array", minItems: 2, maxItems: 4, uniqueItems: true, items: versionId, description: "Two to four version IDs from the active case." } }, ["caseId", "versionIds"]),
         annotations: { readOnlyHint: true, untrustedContentHint: true },
-        execute: execute(async (input, signal) => {
+        execute: execute(async (input, signal, response) => {
           const current = visibleCase(input);
           const ids = input.versionIds as string[];
           if (ids.some((candidate) => !current.versions.some((version) => version.id === candidate))) throw new Error("Every versionId must belong to the active case.");
           store.activeTab = "variants";
           const comparison = await agentApi(`/api/cases/${encodeURIComponent(current.id)}/comparison?versionIds=${encodeURIComponent(ids.join(","))}`, signal);
-          return state("Compared all requested versions. Report failed variants as well as any improvement.", comparison);
+          return response.state("Compared all requested versions. Report failed variants as well as any improvement.", comparison);
         }),
       },
       {
@@ -558,13 +670,13 @@ export function useWebMcp(enabled: Readonly<Ref<boolean>> = ref(true), navigateT
         description: "Start hidden-period replay for an eligible completed strategy version after reviewing its Court evidence. Prepared samples require a pinned replay snapshot. Recording a decision does not start replay.",
         inputSchema: object({ caseId, strategyVersionId: versionId, startDate: described(date, "First reserved replay date."), endDate: described(date, "Last reserved replay date.") }, ["caseId", "strategyVersionId", "startDate", "endDate"]),
         annotations: { readOnlyHint: false, untrustedContentHint: false },
-        execute: execute(async (input, signal) => {
+        execute: execute(async (input, signal, response) => {
           visibleCase(input);
           const requested = String(input.strategyVersionId);
           if (!store.eligibleReplayVersions.some((item) => item.id === requested)) throw new Error("Choose a version listed as replay-eligible by get_case_context.");
           const replayId = await store.startReplay(requested, { startDate: String(input.startDate), endDate: String(input.endDate) }, "agent", signal);
           if (!replayId) throw new Error(store.error ?? "Replay did not start.");
-          return state(`Started replay probation ${replayId}. Read monitoring status before revealing more bars.`, { changedReplayId: replayId }, [replayId]);
+          return response.state(`Started replay probation ${replayId}. Read monitoring status before revealing more bars.`, { changedReplayId: replayId }, [replayId]);
         }),
       },
       {
@@ -573,10 +685,20 @@ export function useWebMcp(enabled: Readonly<Ref<boolean>> = ref(true), navigateT
         description: "Return the machine-readable and human-readable report manifest for the active completed Court case.",
         inputSchema: object({ caseId }, ["caseId"]),
         annotations: { readOnlyHint: true, untrustedContentHint: true },
-        execute: execute(async (input, signal) => {
+        execute: execute(async (input, signal, response) => {
           const current = visibleCase(input);
-          const report = await agentApi(`/api/reports/${encodeURIComponent(current.id)}`, signal);
-          return state(`Returned the report manifest for case ${current.id}.`, report);
+          const run = store.latestRun;
+          if (!run || run.status !== "completed" || !run.result) throw new Error("The active version has no completed report.");
+          const report = unwrap<Record<string, unknown>>(await agentApi(`/api/reports/${encodeURIComponent(run.id)}`, signal), "report");
+          const message = `Returned a compact report brief for run ${run.id}. Read every manifest page before claiming full provenance.`;
+          const manifest = response.reference(report);
+          return {
+            ok: true,
+            message,
+            changedIds: [],
+            currentState: snapshot(store),
+            data: { summary: reportBrief(report), manifest },
+          };
         }),
       },
     );
@@ -587,7 +709,7 @@ export function useWebMcp(enabled: Readonly<Ref<boolean>> = ref(true), navigateT
       description: "Read saved latest-completed-bar evidence for a confirmed version, plus its replay if present. Does not fetch new prices. Use refresh_monitoring for a new evaluation.",
       inputSchema: webMcpSchemaContract.monitoringInput,
       annotations: { readOnlyHint: true, untrustedContentHint: true },
-      execute: execute(async (input, signal) => {
+      execute: execute(async (input, signal, response) => {
         visibleCase(input);
         const requested = String(input.strategyVersionId);
         const replay = store.replay;
@@ -596,19 +718,19 @@ export function useWebMcp(enabled: Readonly<Ref<boolean>> = ref(true), navigateT
           store.loadMonitoringStatus(requested, { refresh: false, actor: "agent", signal }),
         ]);
         if (!monitoring) throw new Error(store.monitoringError ?? "Latest-bar monitoring could not be loaded.");
-        return state(`Returned monitoring and replay-probation state for strategy version ${requested}.`, { probation, latestBar: monitoring });
+        return response.state(`Returned monitoring and replay-probation state for strategy version ${requested}.`, { probation, latestBar: monitoring });
       }),
     }, {
       name: "refresh_monitoring", title: "Refresh monitoring",
       description: "Fetch market data and persist a new latest-completed-bar evaluation for a confirmed version. Use only when the user requests a fresh check. Does not advance replay or place orders.",
       inputSchema: object({ caseId, strategyVersionId: versionId, dataSnapshotPolicy: { type: "string", enum: ["refresh", "frozen"], default: "refresh" } }, ["caseId", "strategyVersionId"]),
       annotations: { readOnlyHint: false, untrustedContentHint: true },
-      execute: execute(async (input, signal) => {
+      execute: execute(async (input, signal, response) => {
         visibleCase(input);
         const monitoring = await store.loadMonitoringStatus(String(input.strategyVersionId), { refresh: true, dataSnapshotPolicy: input.dataSnapshotPolicy as "refresh" | "frozen" | undefined, actor: "agent", signal });
         if (!monitoring) throw new Error(store.monitoringError ?? "Latest-bar monitoring could not be refreshed.");
         store.activeTab = "probation";
-        return state("Saved a latest-bar evaluation. Historical replay was not advanced.", monitoring, store.monitoringEvaluation?.id ? [store.monitoringEvaluation.id] : []);
+        return response.state("Saved a latest-bar evaluation. Historical replay was not advanced.", monitoring, store.monitoringEvaluation?.id ? [store.monitoringEvaluation.id] : []);
       }),
     });
 
@@ -619,12 +741,12 @@ export function useWebMcp(enabled: Readonly<Ref<boolean>> = ref(true), navigateT
         description: "Reveal one bounded increment of the active hidden-period replay after reading its current monitoring status.",
         inputSchema: object({ replayId: described(id, "Active replay ID from get_case_context."), increment: replayIncrement }, ["replayId", "increment"]),
         annotations: { readOnlyHint: false, untrustedContentHint: false },
-        execute: execute(async (input, signal) => {
+        execute: execute(async (input, signal, response) => {
           if (input.replayId !== store.replay?.id) throw new Error("Use the active replayId returned by get_case_context.");
           if (!await store.advanceReplay(input.increment as ReplayAdvanceMode, "agent", signal)) throw new Error(store.error ?? "Replay did not advance.");
           const replay = store.replay;
           if (!replay) throw new Error("The replay advanced, but its refreshed state is unavailable. Read the case context again.");
-          return state(`Advanced replay ${replay.id} by ${String(input.increment).replaceAll("_", " ")}. Read monitoring status again before the next step.`, { changedReplayId: replay.id }, [replay.id]);
+          return response.state(`Advanced replay ${replay.id} by ${String(input.increment).replaceAll("_", " ")}. Read monitoring status again before the next step.`, { changedReplayId: replay.id }, [replay.id]);
         }),
       },
     );
@@ -643,8 +765,7 @@ export function useWebMcp(enabled: Readonly<Ref<boolean>> = ref(true), navigateT
   const reconcile = async () => {
     if (disposed) return;
     if (!enabled.value) {
-      store.clearEvidenceSelection();
-      store.currentCase = null;
+      store.clearCaseSession();
       disposeWebMcpTools(registrations);
       activeContext = null;
       publish({ status: "unsupported", expectedToolNames: [], registeredToolNames: [], errors: [] });
@@ -693,7 +814,7 @@ export function useWebMcp(enabled: Readonly<Ref<boolean>> = ref(true), navigateT
     });
   };
 
-  watch(() => [enabled.value, store.currentCase?.id, store.confirmed, store.latestRun?.status, store.variants.length, store.replay?.id, store.monitoringCandidate?.id], sync, { immediate: true });
+  watch(() => [enabled.value, accountId?.value ?? null, store.currentCase?.id, store.confirmed, store.latestRun?.status, store.variants.length, store.replay?.id, store.monitoringCandidate?.id], sync, { immediate: true });
   const dispose = () => {
     disposed = true;
     results.clear();

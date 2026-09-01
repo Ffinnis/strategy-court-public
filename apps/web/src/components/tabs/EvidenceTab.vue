@@ -25,6 +25,10 @@ const failureInspectionFailed = computed(() => store.evidenceSelection?.status =
 let previousFocus: HTMLElement | null = null;
 let previousEvidenceId: string | null = null;
 
+function isVisibleFocusTarget(candidate: HTMLElement | null): candidate is HTMLElement {
+  return Boolean(candidate?.isConnected && candidate.getClientRects().length > 0);
+}
+
 const evidenceView = ref("trades");
 let previousView = "trades";
 const filtersOpen = ref(false);
@@ -140,8 +144,10 @@ function closeDialog() {
   store.clearEvidenceSelection();
   evidenceView.value = previousView;
   nextTick(() => {
-    const origin = previousEvidenceId ? document.querySelector<HTMLElement>(`[data-evidence-id="${CSS.escape(previousEvidenceId)}"]`) : null;
-    (origin ?? (previousFocus?.isConnected ? previousFocus : document.querySelector<HTMLElement>('[aria-controls="panel-evidence"]')))?.focus();
+    const origin = previousEvidenceId
+      ? [...document.querySelectorAll<HTMLElement>(`[data-evidence-id="${CSS.escape(previousEvidenceId)}"]`)].find(isVisibleFocusTarget) ?? null
+      : null;
+    (isVisibleFocusTarget(previousFocus) ? previousFocus : origin ?? document.querySelector<HTMLElement>('[aria-controls="panel-evidence"]'))?.focus();
     previousFocus = null;
     previousEvidenceId = null;
   });
@@ -220,7 +226,7 @@ watch([signalStatusFilter, signalSymbolFilter], () => { signalPage.value = 1; })
           </div>
         </RevealPanel>
         <div v-if="tradeFilter !== 'All' || outcomeFilter !== 'all' || search || dateStart" class="applied-filters"><span>{{ filteredTrades.length }} of {{ store.result?.trades.length }} trades</span><button v-if="tradeFilter !== 'All'" @click="tradeFilter = 'All'">{{ tradeFilter }} <X :size="11" /></button><button v-if="outcomeFilter !== 'all'" @click="outcomeFilter = 'all'">{{ outcomeFilter === 'profit' ? 'Profit' : 'Loss or flat' }} <X :size="11" /></button><button v-if="dateStart" @click="dateStart = ''; dateEnd = ''">Overlaps {{ dateStart }} → {{ dateEnd }} <X :size="11" /></button><button v-if="search" @click="search = ''">“{{ search }}” <X :size="11" /></button><button v-if="tradeFilter !== 'All' || outcomeFilter !== 'all' || search || dateStart" @click="clearFilters">Clear filters</button></div>
-        <div class="trade-table-wrap">
+        <div class="trade-table-wrap" role="region" aria-label="Completed trades" tabindex="0">
           <table>
             <caption class="sr-only">Completed trades recorded by this Court run</caption>
             <colgroup>
@@ -235,13 +241,13 @@ watch([signalStatusFilter, signalSymbolFilter], () => { signalPage.value = 1; })
             <thead><tr><th>Trade</th><th>Period</th><th>Entry</th><th>Exit</th><th>P&amp;L</th><th>Reason</th><th>View</th></tr></thead>
             <tbody>
               <tr v-for="trade in visibleTrades" :key="trade.id" :class="{ 'trade-row--selected': trade.id === selectedTrade?.id }">
-                <td><div class="trade-identity"><strong class="symbol">{{ trade.symbol }}</strong><small>{{ formatQuantity(trade.quantity) }} shares</small></div></td>
+                <td><div class="trade-identity"><strong class="symbol">{{ trade.symbol }}</strong><small>{{ formatQuantity(trade.quantity) }} shares</small><button class="inspect-button inspect-button--mobile" :data-evidence-id="trade.id" type="button" :aria-label="`Inspect ${trade.symbol} trade from ${trade.entryDate}`" @click="openTrade(trade, $event)"><Search :size="13" aria-hidden="true" /><span>Inspect</span></button></div></td>
                 <td><span class="mono trade-period">{{ trade.entryDate }} <span aria-hidden="true">→</span> {{ trade.exitDate }}</span></td>
                 <td><span class="mono trade-price">${{ trade.entryPrice.toFixed(2) }}</span></td>
                 <td><span class="mono trade-price">${{ trade.exitPrice.toFixed(2) }}</span></td>
                 <td><span class="mono trade-pnl" :class="trade.netProfit >= 0 ? 'trade-pnl--positive' : 'trade-pnl--negative'">{{ formatMoney(trade.netProfit) }}</span></td>
                 <td><span class="trade-reason" :title="trade.exitReason">{{ trade.exitReason }}</span></td>
-                <td><button class="inspect-button" :data-evidence-id="trade.id" type="button" :aria-label="`Inspect ${trade.symbol} trade from ${trade.entryDate}`" @click="openTrade(trade, $event)"><Search :size="14" /></button></td>
+                <td><button class="inspect-button inspect-button--desktop" :data-evidence-id="trade.id" type="button" :aria-label="`Inspect ${trade.symbol} trade from ${trade.entryDate}`" @click="openTrade(trade, $event)"><Search :size="14" aria-hidden="true" /></button></td>
               </tr>
             </tbody>
           </table>
@@ -306,7 +312,7 @@ watch([signalStatusFilter, signalSymbolFilter], () => { signalPage.value = 1; })
           </div>
         </div>
         <p class="signal-filter-summary">{{ filteredSignals.length }} of {{ store.result?.signalDiagnostics.length ?? 0 }} signal events <button v-if="signalStatusFilter !== 'All' || signalSymbolFilter !== 'All'" type="button" @click="signalStatusFilter = 'All'; signalSymbolFilter = 'All'">Clear signal filters</button></p>
-        <div class="trade-table-wrap signal-table-wrap">
+        <div class="trade-table-wrap signal-table-wrap" role="region" aria-label="Skipped and rejected signals" tabindex="0">
           <table>
             <thead><tr><th>Date</th><th>Symbol</th><th>Signal</th><th>Status</th><th>Reason</th></tr></thead>
             <tbody><tr v-for="(event,index) in visibleSignals" :key="`${event.date}:${event.symbol}:${event.signal}:${event.status}:${index}`"><td class="mono">{{ event.date }}</td><td><strong class="symbol">{{ event.symbol }}</strong></td><td>{{ event.signal }}</td><td>{{ event.status }}</td><td>{{ event.reason }}</td></tr></tbody>
@@ -681,6 +687,11 @@ watch([signalStatusFilter, signalSymbolFilter], () => { signalPage.value = 1; })
   scrollbar-color: #333 transparent;
 }
 
+.trade-table-wrap:focus-visible {
+  outline: 2px solid #d4d4d8;
+  outline-offset: 3px;
+}
+
 .trade-table-wrap table {
   width: 100%;
   min-width: 900px;
@@ -787,6 +798,10 @@ watch([signalStatusFilter, signalSymbolFilter], () => { signalPage.value = 1; })
   color: #b8b8b8;
   background: #111;
   cursor: pointer;
+}
+
+.inspect-button--mobile {
+  display: none;
 }
 
 .inspect-button:hover,
@@ -1262,6 +1277,8 @@ watch([signalStatusFilter, signalSymbolFilter], () => { signalPage.value = 1; })
   .evidence-heading { flex-direction: column; align-items: flex-start; gap: 10px; }
   .evidence-view-control { flex-direction: column; align-items: flex-start; gap: 14px; }
   .evidence-view-control :deep(.segmented-control) { max-width: 100%; }
+  .inspect-button--mobile { display: inline-flex; width: auto; min-width: 74px; height: 36px; align-items: center; justify-content: center; gap: 7px; margin-top: 8px; padding: 0 10px; font-size: 11px; }
+  .inspect-button--desktop { display: none; }
 }
 .drawer-calculations { margin: 22px 0; border-block: 1px solid #303030; }.drawer-calculations > summary { padding: 16px 0; color: #bebec8; font-size: 12px; cursor: pointer; }.drawer-calculations > .input-list { margin-bottom: 18px; }
 </style>

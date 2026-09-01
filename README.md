@@ -150,9 +150,10 @@ See [`docs/implementation-plan.md`](./docs/implementation-plan.md) for the full 
 
 ## WebMCP tools
 
-The frontend progressively registers the PRD tools as the case advances:
+The frontend progressively registers tools as the visible workspace advances:
 
-- Signed in: `create_case`, `get_case_context`, `list_indicator_catalog`, `read_tool_result`, `create_strategy_draft`, `create_custom_indicator`
+- Signed in without an open case: `create_case`, `list_cases`, `open_case`, `read_tool_result`
+- Case open: `get_case_context`, `list_indicator_catalog`, `create_strategy_draft`, `create_custom_indicator`, plus the account-level tools above
 - Confirmed version: `run_court`, `get_monitoring_status`, `refresh_monitoring`
 - Valid completed Court run: `inspect_trade`, `inspect_failure_period`, `propose_case_decision`, `create_strategy_variants`, `compare_strategy_versions`, `start_replay_probation`, `export_case_report`
 - Replay active: `advance_replay`
@@ -161,7 +162,7 @@ The frontend progressively registers the PRD tools as the case advances:
 
 `create_case` requires a stable `requestId`; retries with the same owner, key and settings return the same case. `propose_case_decision` saves a private draft tied to an exact case, version and run. There is no confirmation tool. The person confirms through the visible form. Session authentication enforces ownership; the `x-actor` UI/agent distinction is a workflow convention, not proof of human identity. Existing report links reflect later confirmed decisions, including their history.
 
-`get_case_context` returns a compact summary by default. Request `detail: "strategy"` for the active version's exact rules without trade and price history, or `detail: "full"` for all case evidence. `list_indicator_catalog` returns ten summaries per page; pass `ids` (up to three) for exact parameter definitions before constructing a strategy. Large results return a `resultId`: call `read_tool_result` with the returned `nextOffset`, concatenate `jsonText` chunks, then parse the combined JSON. Handles expire after five minutes, on case/session changes, or when the bounded browser cache evicts an older result. Repeat the original read-only request if a handle expires. Normal responses are capped at 8,000 serialized characters, including their state envelope.
+`list_cases` searches and pages the signed-in owner's cases in the database. `open_case` loads that owned case once, navigates the visible app, and returns state for the same case. `get_case_context` returns a compact summary by default. Request `detail: "strategy"` for the active version's exact rules without trade and price history, or `detail: "full"` for all case evidence. `list_indicator_catalog` returns ten summaries per page; pass `ids` (up to three) for exact parameter definitions before constructing a strategy. Large results return a `resultId`: call `read_tool_result` with the returned `nextOffset`, concatenate `jsonText` chunks, then parse the combined JSON. Handles expire five minutes after the last successful page read, on account or case changes, or when the bounded browser cache evicts an older result. Repeat the original read-only request if a handle expires. Normal responses are capped at 8,000 serialized characters, including their state envelope.
 
 Schemas reject extra fields and executable code. The API validates requests again and never returns provider credentials. Case content is untrusted data, not instructions to an agent. Tools use the signed-in browser session and cannot access another account's cases.
 

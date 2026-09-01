@@ -345,6 +345,41 @@ export class Store {
     return (result.rows as Row[]).map(caseFromRow);
   }
 
+  async listCasesPage(
+    ownerUserId: string,
+    options: { query: string; offset: number; limit: number },
+  ): Promise<{ cases: CaseRecord[]; total: number; offset: number; nextOffset: number | null }> {
+    const filter = `owner_user_id = $1 AND (
+      $2 = ''
+      OR POSITION(LOWER($2) IN LOWER(name)) > 0
+      OR POSITION(LOWER($2) IN LOWER(description)) > 0
+      OR EXISTS (
+        SELECT 1 FROM jsonb_array_elements_text(symbols_json) AS symbol(value)
+        WHERE POSITION(LOWER($2) IN LOWER(symbol.value)) > 0
+      )
+    )`;
+    const result = await this.db.query<{ cases_json: Row[]; total: string }>(
+      `WITH filtered AS MATERIALIZED (
+         SELECT * FROM court_cases WHERE ${filter}
+       ), page AS (
+         SELECT * FROM filtered ORDER BY updated_at DESC, id DESC LIMIT $3 OFFSET $4
+       )
+       SELECT
+         COALESCE((SELECT jsonb_agg(to_jsonb(page) ORDER BY updated_at DESC, id DESC) FROM page), '[]'::jsonb) AS cases_json,
+         (SELECT COUNT(*)::text FROM filtered) AS total`,
+      [ownerUserId, options.query, options.limit, options.offset],
+    );
+    const cases = (result.rows[0]?.cases_json ?? []).map(caseFromRow);
+    const total = Number(result.rows[0]?.total ?? 0);
+    const consumed = options.offset + cases.length;
+    return {
+      cases,
+      total,
+      offset: options.offset,
+      nextOffset: consumed < total ? consumed : null,
+    };
+  }
+
   async getCase(caseId: string, ownerUserId: string): Promise<CaseRecord | null> {
     const result = await this.db.query(
       "SELECT * FROM court_cases WHERE id = $1 AND owner_user_id = $2",

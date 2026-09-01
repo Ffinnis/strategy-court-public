@@ -13,13 +13,14 @@ const route = useRoute();
 const router = useRouter();
 const sessionState = authClient.useSession();
 const currentUser = computed(() => sessionState.value.data?.user ?? null);
+const currentAccountId = computed(() => currentUser.value?.id ?? null);
 watch(() => currentUser.value?.id, () => notifications.clear());
 const webMcpEnabled = computed(() => Boolean(currentUser.value));
 const isAuthPage = computed(() => route.name === "auth");
 const signingOut = ref(false);
 const signOutError = ref("");
 
-useWebMcp(webMcpEnabled, id => router.push(`/case/${encodeURIComponent(id)}`));
+useWebMcp(webMcpEnabled, id => router.push(`/case/${encodeURIComponent(id)}`), currentAccountId);
 
 watch(() => [sessionState.value.isPending, Boolean(currentUser.value)] as const, ([pending, signedIn]) => {
   if (!pending && !signedIn && route.meta.requiresAuth) {

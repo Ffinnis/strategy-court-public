@@ -14,15 +14,20 @@ function list(value: unknown): unknown[] {
   return Array.isArray(value) ? value : [];
 }
 
-function serialized(value: unknown): string {
+function serialized(value: unknown): CsvValue {
   if (value === undefined || value === null) return "";
   if (typeof value === "string") return value;
-  if (typeof value === "number" || typeof value === "boolean") return String(value);
+  if (typeof value === "number" || typeof value === "boolean") return value;
   return JSON.stringify(value);
 }
 
 function safeSpreadsheetText(value: string): string {
-  return /^[=+\-@]/.test(value) ? `'${value}` : value;
+  const normalized = value.replace(/[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f-\u009f]/gu, "");
+  const leadingWhitespace = /^\s*/u.exec(normalized)?.[0] ?? "";
+  const firstVisible = normalized.slice(leadingWhitespace.length, leadingWhitespace.length + 1);
+  const dangerous = /^[=+\-@\uff0b\uff0d\uff1d\uff20]$/u.test(firstVisible);
+  const startsWithRowControl = /^[\t\r\n]/u.test(normalized);
+  return dangerous || startsWithRowControl ? `'${normalized}` : normalized;
 }
 
 function cell(value: CsvValue): string {
@@ -30,7 +35,7 @@ function cell(value: CsvValue): string {
   if (typeof value === "number") return Number.isFinite(value) ? String(value) : "";
   if (typeof value === "boolean") return value ? "true" : "false";
   const text = safeSpreadsheetText(value).replaceAll('"', '""');
-  return /[",\r\n]/.test(text) ? `"${text}"` : text;
+  return /[",\t\r\n]/.test(text) ? `"${text}"` : text;
 }
 
 function csv(columns: readonly string[], rows: readonly CsvRow[]): string {

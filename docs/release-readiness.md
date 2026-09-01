@@ -1,5 +1,11 @@
 # Release readiness, August 31, 2026
 
+## September 1 final polish pass
+
+The current local worktree passes `bun run check` with 218 tests, zero failures and 5,133 assertions across 36 files. Type checks, notices, fixture verification, production builds and `git diff --check` pass. The final pass also verified server-side owner-scoped case paging, case-navigation race protection, account-scoped WebMCP result handles, sliding result-page expiry, all seven compact report verdicts, CSV formula hardening, strict case aliases, mobile Evidence inspection and focus return, auth validation focus, the initially visible mobile indicator catalog, and synchronous clearing of recent investigations when the signed-in account changes.
+
+The production deployment remains older than this audited worktree. Do not record the final demo against production until the exact reviewed revision is committed, pushed, deployed and accepted with a fresh production account.
+
 The four independently reproduced defects are fixed and verified locally. The current production release does not yet include these fixes or the shared-evidence, decision-record and prepared-sample additions. This document separates local verification from deployment evidence.
 
 ## Completed
