@@ -8,7 +8,7 @@ test("brand mark is a small standalone vector with no raster or runtime dependen
   const source = await Bun.file(markFile).text();
 
   expect(source).toContain('viewBox="0 0 48 56"');
-  expect(source).toContain("<title>Strategy Court</title>");
+  expect(source).toContain("<title>Retrade</title>");
   expect(pathData(source)).toHaveLength(2);
   expect(source).not.toMatch(/<(image|script|foreignObject|text|filter)\b|(?:href|onload)=|data:image/);
   expect(source.length).toBeLessThan(1200);

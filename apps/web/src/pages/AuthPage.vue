@@ -263,7 +263,7 @@ async function submit() {
         </form>
 
         <p class="auth-switch">
-          {{ isSignup ? "Already have an account?" : "New to Strategy Court?" }}
+          {{ isSignup ? "Already have an account?" : "New to Retrade?" }}
           <button type="button" @click="setMode(isSignup ? 'signin' : 'signup')">{{ isSignup ? "Sign in" : "Create one" }}</button>
         </p>
       </div>

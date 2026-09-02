@@ -100,7 +100,7 @@ onMounted(loadIndicator);
 <template>
   <main class="shared-indicator">
     <div class="indicator-shell">
-      <RouterLink class="back-link" to="/"><ArrowLeft :size="14" />Strategy Court</RouterLink>
+      <RouterLink class="back-link" to="/"><ArrowLeft :size="14" />Retrade</RouterLink>
 
       <section v-if="loading" class="page-state" role="status">
         <span class="loading-ring" aria-hidden="true" />

@@ -86,9 +86,9 @@ onBeforeUnmount(() => {
 <template>
   <header ref="headerElement" class="app-header" :class="{ 'app-header--workspace': route.name === 'case' }">
     <div class="app-header__inner">
-      <RouterLink class="app-brand" to="/" aria-label="Strategy Court home" @click="closeDisclosures">
+      <RouterLink class="app-brand" to="/" aria-label="Retrade home" @click="closeDisclosures">
         <img src="/brand/strategy-court-mark.svg" width="32" height="32" alt="" aria-hidden="true" />
-        <span>Strategy Court</span>
+        <span>Retrade</span>
       </RouterLink>
 
       <nav v-if="!isAuthPage" class="app-header__navigation" aria-label="Main navigation">
@@ -124,7 +124,7 @@ onBeforeUnmount(() => {
             <Transition name="header-popover">
               <div v-if="openDisclosure === 'account'" id="header-account-panel" ref="accountPanel" class="account-popover">
                 <div class="account-identity">
-                  <strong>{{ user.name || "Strategy Court account" }}</strong>
+                  <strong>{{ user.name || "Retrade account" }}</strong>
                   <span>{{ user.email }}</span>
                 </div>
                 <button class="account-sign-out" type="button" :disabled="signingOut" :aria-busy="signingOut" @click="emit('signOut')">

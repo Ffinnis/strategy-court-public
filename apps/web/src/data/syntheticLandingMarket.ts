@@ -5,7 +5,7 @@ export type LandingMarketBar = readonly [date: string, open: number, high: numbe
 export const LANDING_MARKET_SOURCE = {
   "symbol": "QQQ",
   "name": "Synthetic example",
-  "provider": "Strategy Court generator",
+  "provider": "Retrade generator",
   "mode": "Synthetic demo",
   "interval": "Fictional weekday sessions",
   "currency": "USD",

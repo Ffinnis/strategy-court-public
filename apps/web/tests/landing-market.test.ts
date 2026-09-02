@@ -9,7 +9,7 @@ test("landing preview contains an ordered year of clearly labeled synthetic pric
   expect(LANDING_MARKET_DATA.at(-1)?.[0]).toBe("2024-12-31");
   expect(LANDING_MARKET_SOURCE).toMatchObject({
     symbol: "QQQ",
-    provider: "Strategy Court generator",
+    provider: "Retrade generator",
     mode: "Synthetic demo",
     adjustment: "None, generated values",
     startDate: "2024-01-02",
