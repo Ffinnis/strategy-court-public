@@ -8,7 +8,7 @@ This repository implements the WebMCP Challenge MVP described in [`prd.md`](./pr
 
 Start with the [reviewer test guide](./docs/reviewer-testing.md) for account setup, the WebMCP workflow, and an offline fallback.
 
-See [release readiness](./docs/release-readiness.md) for verified fixes and remaining deployment checks, and the [demo script](./docs/hackathon-demo.md) for the recording and user-test plan.
+See [release readiness](./docs/release-readiness.md) for current production evidence, the [demo script](./docs/hackathon-demo.md) for the recording plan, and the [Devpost submission copy](./docs/devpost-submission.md) for the paste-ready project description.
 
 ## Run locally
 
@@ -60,10 +60,10 @@ For testing without credentials, explicitly choose **Synthetic demo**, or pass `
 
 ## Demo path
 
-1. Sign in and choose **Open sample** after the operator has [prepared the saved Alpaca history](./docs/prepared-sample.md). Alternatively, ask an agent to call `create_case` with your stated idea and reviewed settings.
-2. Review the structured RSI pullback rules and execution assumptions.
+1. Sign in, then ask an agent to call `create_case` with your stated idea and reviewed settings. Use **Open sample** only after the operator has [prepared saved Alpaca history](./docs/prepared-sample.md).
+2. Ask the agent to inspect the indicator catalog and draft exact structured rules. Review the rules and execution assumptions in the interface.
 3. Confirm the visible strategy interpretation. Draft creation saves a version; confirmation locks it for execution and remains a user action.
-4. Run Court on **Saved Alpaca history** for a prepared sample. Inspect the verdicts, trades, equity and drawdown. Missing saved data produces an error, never substitute prices.
+4. For the reproducible software walkthrough, call `run_court` with `dataSnapshotPolicy: "frozen"` and keep the generated-price disclosure visible. Use saved or refreshed data only when it is actually available. Missing provider data produces an error and never silently substitutes generated prices.
 5. Select a trade or failure yourself, or ask the agent to inspect it. Both use the same inspector and chart focus.
 6. Ask the agent to propose a cited decision. Review, edit and confirm it in Court. Confirmed decisions appear in the report; drafts stay private. Earlier confirmed decisions remain in history.
 7. Continue only for an explicit evidence question. Variants remain limited to three. Replay requires a Surviving or Inconclusive result and remains a separate action.

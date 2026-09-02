@@ -20,7 +20,7 @@ import { getMigrations } from "better-auth/db/migration";
 import { Pool } from "pg";
 import { createAuth, type StrategyCourtAuth } from "./auth";
 import { ApiError, errorResponse, requireObject } from "./errors";
-import { waitForDatabase } from "./database-readiness";
+import { AUTH_DATABASE_RETRY_DELAYS_MS, createDatabaseReadinessGate, isTransientDatabaseError, waitForDatabase } from "./database-readiness";
 import { SequentialQueue } from "./jobs/sequential-queue";
 import { selectMarketProvider, snapshotForDomain, type MarketProvider } from "./providers/market";
 import { BUILT_IN_INDICATORS, FORMULA_PRIMITIVES } from "./services/catalog";
@@ -46,6 +46,8 @@ export interface AppOptions {
   resolveSession?: (request: Request) => Promise<AuthSession | null>;
   migrate?: boolean;
   buildId?: string;
+  databaseRetryDelaysMs?: readonly number[];
+  databaseReadinessTtlMs?: number;
 }
 
 export interface AuthSession {
@@ -111,11 +113,16 @@ function json(value: unknown, status: number, headers: Headers): Response {
   return new Response(JSON.stringify(value), { status, headers });
 }
 
-function databaseUnavailable(headers: Headers): Response {
-  headers.set("retry-after", "5");
+function databaseUnavailable(headers: Headers, retryable = true): Response {
+  if (retryable) headers.set("retry-after", "5");
+  else headers.delete("retry-after");
   return json({
-    code: "AUTH_SERVICE_UNAVAILABLE",
-    message: "The account service is warming up. Try again in a moment.",
+    error: {
+      code: retryable ? "AUTH_SERVICE_UNAVAILABLE" : "DATABASE_STATE_UNCERTAIN",
+      message: retryable
+        ? "The account service is warming up. Try again in a moment."
+        : "The database connection was interrupted. Reload and check the saved state before trying again.",
+    },
   }, 503, headers);
 }
 
@@ -607,17 +614,26 @@ export async function createApp(options: AppOptions = {}): Promise<ApiApp> {
     ?? process.env.RAILWAY_GIT_COMMIT_SHA
     ?? process.env.VERCEL_GIT_COMMIT_SHA
     ?? process.env.SOURCE_VERSION;
+  const databaseRetryDelaysMs = options.databaseRetryDelaysMs ?? AUTH_DATABASE_RETRY_DELAYS_MS;
   const ownsPool = !options.pool;
   const pool = options.pool ?? new Pool({
     connectionString: options.databaseUrl ?? process.env.DATABASE_URL ?? "postgresql://strategy_court:strategy_court@localhost/strategy_court",
     connectionTimeoutMillis: 5_000,
   });
+  const databaseReadiness = createDatabaseReadinessGate(
+    pool,
+    databaseRetryDelaysMs,
+    options.databaseReadinessTtlMs ?? 5_000,
+  );
   if (ownsPool) {
-    pool.on("error", logDatabasePoolError);
+    pool.on("error", (error) => {
+      databaseReadiness.invalidate();
+      logDatabasePoolError(error);
+    });
   }
   const auth = createAuth(pool, { trustedOrigins: allowedOrigins });
   if (options.migrate !== false) {
-    await waitForDatabase(pool);
+    await databaseReadiness.wait();
     const authMigrations = await getMigrations(auth.options);
     await authMigrations.runMigrations();
   }
@@ -698,9 +714,10 @@ export async function createApp(options: AppOptions = {}): Promise<ApiApp> {
     try {
       if (path.startsWith("/api/auth")) {
         try {
-          await waitForDatabase(pool);
+          await databaseReadiness.wait();
         } catch (error) {
-          console.error("Strategy Court auth database is unavailable", error);
+          if (!isTransientDatabaseError(error)) throw error;
+          console.error("Strategy Court auth database is unavailable", JSON.stringify(databaseErrorLog(error)));
           return databaseUnavailable(headers);
         }
         return responseWithCors(await auth.handler(request), headers);
@@ -719,6 +736,14 @@ export async function createApp(options: AppOptions = {}): Promise<ApiApp> {
           engineVersion: DOMAIN_ENGINE_VERSION,
           ...(buildId ? { buildId } : {}),
         }, 200, headers);
+      }
+
+      try {
+        await databaseReadiness.wait();
+      } catch (error) {
+        if (!isTransientDatabaseError(error)) throw error;
+        console.error("Strategy Court session database is unavailable", JSON.stringify(databaseErrorLog(error)));
+        return databaseUnavailable(headers);
       }
 
       const session = options.resolveSession
@@ -1389,6 +1414,11 @@ export async function createApp(options: AppOptions = {}): Promise<ApiApp> {
 
       throw new ApiError(404, "route_not_found", "API route not found", { method: request.method, path });
     } catch (error) {
+      if (isTransientDatabaseError(error)) {
+        databaseReadiness.invalidate();
+        console.error("Strategy Court request database is unavailable", JSON.stringify(databaseErrorLog(error)));
+        return databaseUnavailable(headers, request.method === "GET" || request.method === "HEAD");
+      }
       return errorResponse(error, headers);
     }
   };

@@ -1,95 +1,125 @@
-# One investigation, one defensible decision
+# Strategy Court video script
 
-Recording plan prepared August 31, 2026. This is a script and test protocol, not a completed video or evidence of user validation.
+Target length: 2 minutes 50 seconds. The recording must be public, include audio, and stay under the hackathon's three-minute limit.
 
-The product claim: Strategy Court helps people decide whether a trading rule deserves further investigation. An agent can draft and investigate; the person confirms the rules and the conclusion. A rejected idea is a useful result.
+## Recording setup
 
-## Choose the evidence before recording
+- Record the production app at <https://strategy-court-production.up.railway.app/>.
+- Put Strategy Court and the WebMCP agent side by side. Keep browser zoom at 100% and use a 1440 px or wider recording canvas.
+- Create a fresh case with the same SPY/SMA 20 rules below, draft the strategy, and stop before confirmation. This lets the recording show the human-only confirmation boundary.
+- Keep the `Generated prices` disclosure visible when the Court result appears.
+- Use the actual IDs and findings returned during recording. Do not paste IDs from another account.
+- Cut waiting time after starting Court, but show a short `Run completed` transition. Do not simulate tool calls or results.
+- Hide email addresses, passwords, tokens, cookies, and provider credentials.
+- Preserve access to the QA account that owns case `43613d27-4f8c-4ef0-94b1-049103ba7e54`. That clean case is a fallback for the post-run evidence and decision sequence only. It cannot show the unconfirmed-strategy transition because its rules are already confirmed.
 
-Use the prepared `rsi-pullback` sample described in [prepared-sample.md](./prepared-sample.md). Keep the existing rules, symbols, dates and costs. Do not search for a more flattering result.
+### Recording strategy
 
-- Entry: RSI 14 below 35 while price is above EMA 200.
-- Exit: RSI above 60, a 5% stop, a 10% take profit, or 20 trading days held.
-- AAPL, MSFT, NVDA, QQQ and SPY. Daily, long only, next-open execution.
-- Court history: January 2, 2020 through December 31, 2024. Starting capital $10,000, zero commission and five basis points slippage per side.
-- Prepare the separate 2025 history if replay is needed. Keep it out of the Court evidence.
+- Name: `SPY SMA 20 trend investigation`
+- Symbol: `SPY`
+- Range: `2020-01-02` through `2024-12-31`
+- Initial capital: `$10,000`
+- Commission: `0` basis points per side
+- Slippage: `5` basis points per side
+- Entry: daily SPY close is above SMA 20 of close
+- Exit: daily SPY close is below SMA 20 of close
+- Direction: long only
+- Signal: completed close
+- Fill: next open, market order
+- Data policy: frozen generated demo prices
 
-Real-data recording is blocked until the operator supplies provider access and confirms permission to show and export that evidence. The local synthetic QA cases are suitable for rehearsing interactions only. Do not describe their returns as actual security performance.
+## The 2:50 cut
 
-Set a preparation cutoff before recording. If the prepared sample has not passed the full production check by that cutoff, use **Synthetic software demo** and keep the generated-data label visible. Do not spend recording time showing the failed sample request.
-
-For the synthetic version, replace the saved-history narration with:
-
-> "These are generated daily prices used to test the investigation workflow. They are not actual QQQ or SPY history. The agent and I still share the same rules, Court tests, evidence selection and decision record."
-
-The rest of the recording stays the same. Report the actual synthetic verdict, select actual returned evidence, and avoid any claim about market performance.
-
-Before recording, capture the case, version and run IDs, provider, feed, adjustment, snapshot hash, engine version and actual verdict. Choose one returned failure or trade and record its exact ID. Leave these values blank until the run exists. If the run is Invalid, explain the reason and stop the investigation; do not narrate missing results.
-
-## The 2:40 recording
-
-Keep the product and agent interaction visible. Use a real walkthrough with cuts for waiting, labeled when time is skipped. Do not create a scripted UI that impersonates tool execution. The [official rules](https://webmcp.devpost.com/rules) require a functioning demo with audio, under three minutes, publicly available on YouTube.
-
-| Time | What the viewer sees | Spoken copy |
+| Time | Screen and action | Spoken copy |
 | --- | --- | --- |
-| 0:00–0:15 | The investigation and its exact rules | "A backtest can look convincing while depending on a few trades. Strategy Court helps you inspect that weakness before deciding whether an idea deserves more work." |
-| 0:15–0:35 | Open sample, then the person reviews and confirms its unconfirmed rules | "This investigation uses a saved market-data snapshot. I review the entry, exit, costs and dates before confirming the rules. The agent cannot confirm them for me." |
-| 0:35–1:00 | Agent reads context and runs Court. Show the saved-data label and real returned verdict | "The agent reads the same case I have open and runs its confirmed rules through seven tests. The snapshot and engine version make this result reproducible." |
-| 1:00–1:35 | Agent selects one actual failure or trade. The visible inspector and chart focus change together | "I ask why this finding matters. The agent selects the exact evidence in my workspace, so I can check its explanation against the trades, dates and costs." |
-| 1:35–1:55 | Person selects a different trade; agent reads the updated selection | "I can steer the investigation myself. The agent sees my selection and continues from the same evidence, rather than guessing what I am looking at." |
-| 1:55–2:25 | Agent proposes a cited decision. Person edits uncertainty or revisit criteria and confirms | "The agent proposes a conclusion with citations and limitations. I edit and confirm it. We keep a rejection if the evidence does not support further work." |
-| 2:25–2:40 | Reload the report and open its citation | "The report preserves the confirmed decision and its evidence. WebMCP connects the agent's investigation to actions I can see, inspect and approve. Strategy Court does not place trades." |
+| 0:00–0:14 | Split view. Show the case and the agent. Keep the generated-price disclosure visible. | "A promising backtest can depend on a few trades. Strategy Court helps a person and an agent find that weakness before more capital or effort is committed. This demo uses generated prices, not market evidence." |
+| 0:14–0:29 | Show the exact rules. Call `get_case_context` with `detail: strategy` and point to the version and `confirmed: false`. | "I ask for the current strategy. WebMCP returns the exact version, rules, and confirmation state from the case on screen. The agent does not infer application state from pixels." |
+| 0:29–0:43 | Review entry, exit, costs, and execution in the interface. Click the confirmation control. Show that `run_court` becomes available. | "Before testing starts, I confirm the rules myself. There is no agent tool for this step. Strategy confirmation remains a human decision." |
+| 0:43–1:01 | Call `run_court` with the confirmed version and frozen policy. Cut the wait. Show `Fragile` and the seven-test overview. | "Now the agent runs the Court against this exact version and frozen snapshot. Seven robustness tests examine evidence, execution, parameters, regimes, concentration, and risk. The inputs and engine version make the run reproducible." |
+| 1:01–1:23 | Read context, use the returned `profit_concentration` failure ID, then call `inspect_failure_period`. Show Evidence opening and the chart focusing. | "The result is not a generic score. The agent opens one specific failure: the best five trades contribute more than all completed-trade net profit. The same evidence appears in the interface." |
+| 1:23–1:50 | Add a short `Human changes the evidence` cut. Close the failure inspector, open Trades page 2, and select `trade-65`, September 29 to November 22, 2023, `+$3,552.38`. Call context again and highlight `actor: user`. | "I select the largest contributing trade myself. It produced $3,552.38. The agent reads that human selection, including who selected it, without screen scraping or a second copy of the case." |
+| 1:50–2:10 | Call `propose_case_decision` with `profit_concentration` and `trade-65`. Show the private draft and citation links. | "The failure and its largest trade now support one conclusion. The agent drafts a cited rejection with uncertainty and a condition for revisiting it. The proposal is still private and unconfirmed." |
+| 2:10–2:33 | In the interface, replace the vague revisit condition with the exact sentence shown below, then confirm. | "I make the revisit condition specific, then confirm the conclusion myself. The agent performs structured research, while the person owns the judgment. Strategy Court does not place orders." |
+| 2:33–2:44 | Open Activity, reload the case, and show the persisted confirmed decision and its two citations. | "The confirmed decision survives reload, and both citations remain connected to the evidence." |
+| 2:44–2:50 | End on the confirmed decision beside the WebMCP status. | "WebMCP makes this a shared investigation. The agent does the structured work, and the person keeps the decision." |
 
-If the prepared run supports further investigation, replace the rejection sentence with the actual uncertainty and a reason to gather more evidence. Do not claim a profitable future. Replay is optional and should appear only if the real result is eligible; it is unnecessary for this story.
+## Calls to prepare
 
-Do not spend the main recording on every indicator, all seven explanations, variant tuning, account setup or infrastructure. A controlled variant can be a separate supporting clip. All attempts stay in the record.
+Read the strategy:
 
-## Agent prompts for rehearsal
+```json
+{
+  "detail": "strategy"
+}
+```
 
-After the person opens and confirms the sample:
+Run the Court after human confirmation:
 
-> Read the active case and its confirmed rules. Run Court using its saved sample. Use the returned IDs and keep the actual result. Do not change the rules or search for a better verdict.
+```json
+{
+  "caseId": "<CASE_ID>",
+  "strategyVersionId": "<VERSION_ID>",
+  "startDate": "2020-01-02",
+  "endDate": "2024-12-31",
+  "courtProfile": "balanced",
+  "dataSnapshotPolicy": "frozen"
+}
+```
 
-After Court completes:
+Read the completed investigation:
 
-> Inspect one specific finding that most limits confidence in this strategy. Select its failure or trade in the visible workspace. Explain the returned evidence and its uncertainty. Do not invent missing prices or results.
+```json
+{}
+```
 
-After the person selects another trade:
+Inspect the returned concentration failure:
 
-> Read my current selection. Explain how this evidence affects the investigation. Propose a decision with exact references, uncertainty and conditions for revisiting it. Leave confirmation to me. Do not create more variants.
+```json
+{
+  "runId": "<RUN_ID>",
+  "failureId": "profit_concentration"
+}
+```
 
-A separate creation clip can use `create_case` and `create_strategy_draft`. The main recording uses a prepared sample to keep the evidence and running time predictable.
+After the person selects the top contributing trade, call `get_case_context` again with `{}`. Confirm that it returns `trade-65` with `actor: user`, then use that ID in the draft:
 
-## Submission description draft
+```json
+{
+  "caseId": "<CASE_ID>",
+  "runId": "<RUN_ID>",
+  "requestId": "video-decision-20260902-a",
+  "fields": {
+    "outcome": "rejected",
+    "rationale": "Reject further work on this version because the largest trade, trade-65, produced $3,552.38 and the best five trades exceed all completed-trade net profit, so the aggregate return is not broadly supported.",
+    "evidenceRefs": [
+      {
+        "kind": "failure",
+        "id": "profit_concentration"
+      },
+      {
+        "kind": "trade",
+        "id": "trade-65"
+      }
+    ],
+    "uncertainties": "Generated prices validate the investigation workflow, not behavior on real market data.",
+    "revisitCriteria": "Revisit after a display-approved real-data run."
+  }
+}
+```
 
-Strategy Court is for people who write rule-based trading ideas and need to understand their weaknesses before pursuing them. It tests explicit daily, long-only rules, then links findings to trades, market periods, execution assumptions and costs. Its output is an inspectable investigation record, not a trade recommendation.
+If the recorded run returns a different finding, change the narration and rationale to match it. Never force the result to fit this script.
 
-WebMCP lets a browser agent work inside the same investigation as the person. The agent can create case setup, read the indicator catalog, draft exact rules, run approved tests and select evidence in the visible chart. The person can change the selection, edit a proposed conclusion and confirm it. The agent sees those changes in context. Confirmed decisions preserve their run and citations; private drafts stay out of public reports.
+During the human edit, replace the draft's revisit condition with: `Revisit only if a display-approved real-data run has enough completed trades, shows a broader profit distribution, and keeps drawdown and recovery within the accepted limits.`
 
-The Vue application registers tools through `document.modelContext`. Tools use bounded schemas, state-dependent availability, explicit actor attribution and paginated evidence. The API validates requests and persists immutable strategy versions, deterministic results and confirmed decisions. Case creation supports safe retries. A pinned sample checks its data provenance, hash and engine version before running. Missing real data produces an explicit error.
+## Final edit checklist
 
-Before submitting this draft, add the verified deployment, public source and final video links. Describe real-data preparation as completed only after the deployed sample and its report have been checked.
-
-## Five-minute user sessions
-
-Ask three people who already inspect backtests or write trading rules to try the deployed build. This is a small usability pilot, not evidence that the strategies work. Invitations have not been sent and no feedback has been collected.
-
-Give each participant the same task: "Investigate this rule, find a reason to trust or question the result, and record what you would do next." Avoid directing them to a particular verdict.
-
-Observe whether they can:
-
-1. Identify the exact rules and explain what their confirmation approves.
-2. Distinguish actual saved history from synthetic software data.
-3. Follow a finding to a trade or failure period without coaching.
-4. Notice when the agent changes the visible selection, then steer it themselves.
-5. Record a cited decision and explain what evidence would change their mind.
-
-Record time to first evidence, task completion, unprompted mistakes and how often help was needed. Ask: "What did you conclude? Which evidence changed your mind? What would you normally use instead? What here was confusing or unnecessary?"
-
-| Participant | First evidence time | Completed without help | Data source understood | Decision supported by citation | Confusion or exact feedback |
-| --- | --- | --- | --- | --- | --- |
-| 1 | Not tested | Not tested | Not tested | Not tested | |
-| 2 | Not tested | Not tested | Not tested | Not tested | |
-| 3 | Not tested | Not tested | Not tested | Not tested | |
-
-Fix any case where a participant mistakes generated prices for real evidence or thinks the agent can approve a strategy. With three sessions, report observations and counts, not broad claims about adoption or market impact.
+- Total duration is below 3:00.
+- Voice is clear and music, if any, does not cover it.
+- The first 15 seconds state the problem and the generated-data limitation.
+- At least three real WebMCP calls and their returned state are legible.
+- Human strategy confirmation and human decision confirmation are both visible.
+- The video shows the two-way selection handoff.
+- No credential, email, or session value is visible.
+- Music, fonts, logos, screenshots, and other visible assets are owned, licensed, or permitted for submission.
+- Captions use sentence case and match the spoken claims.
+- The YouTube link works while signed out and is not age-restricted.

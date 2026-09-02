@@ -2,6 +2,11 @@ export interface DatabaseProbe {
   query(sql: string): Promise<unknown>;
 }
 
+export interface DatabaseReadinessGate {
+  wait(): Promise<void>;
+  invalidate(): void;
+}
+
 const TRANSIENT_CONNECTION_CODES = new Set([
   "57P03",
   "ECONNREFUSED",
@@ -51,4 +56,27 @@ export async function waitForDatabase(
       await sleep(retryDelaysMs[attempt]!);
     }
   }
+}
+
+export function createDatabaseReadinessGate(
+  database: DatabaseProbe,
+  retryDelaysMs: readonly number[] = AUTH_DATABASE_RETRY_DELAYS_MS,
+  ttlMs = 5_000,
+  now: () => number = Date.now,
+): DatabaseReadinessGate {
+  let readyUntil = 0;
+  let pending: Promise<void> | undefined;
+
+  return {
+    wait() {
+      if (now() < readyUntil) return Promise.resolve();
+      pending ??= waitForDatabase(database, retryDelaysMs)
+        .then(() => { readyUntil = now() + ttlMs; })
+        .finally(() => { pending = undefined; });
+      return pending;
+    },
+    invalidate() {
+      readyUntil = 0;
+    },
+  };
 }
