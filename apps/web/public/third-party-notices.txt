@@ -1,4 +1,4 @@
-Retrade third-party notices
+Strategy Court third-party notices
 
 Copyright and permission notices for installed runtime dependencies of the web app and API.
 Some packages include build helpers or optional code that is not present in the final bundles.
