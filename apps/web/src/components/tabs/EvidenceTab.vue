@@ -423,9 +423,7 @@ watch([signalStatusFilter, signalSymbolFilter], () => { signalPage.value = 1; })
 .applied-filters button{display:flex;align-items:center;gap:6px;padding:5px 8px;border:1px solid #353535;border-radius:6px;background:#171717;color:#bbb;font-size:10px;cursor:pointer;}
 .trade-row--selected{background:#202020;box-shadow:inset 2px 0 #ddd;}
 .trade-table-wrap{max-height:580px;overflow:auto;}
-.trade-table-wrap thead{position:sticky;top:0;z-index:2;background:#151515;}
-.trade-table-wrap td:first-child,.trade-table-wrap th:first-child{position:sticky;left:0;background:#101010;z-index:1;}
-.trade-row--selected td:first-child{background:#202020;}
+.trade-table-wrap thead{background:#151515;}
 .signal-filter-summary{color:#999;font-size:11px;margin:0 0 12px;}.signal-filter-summary button{margin-left:12px;padding:0;border:0;border-bottom:1px solid #555;background:transparent;color:#ccc;font-size:11px;cursor:pointer;}
 .evidence-context{display:grid;gap:10px;}.synthetic-disclosure{margin:0;color:#bbb;font-size:11px;line-height:1.6;}
 .evidence-provenance{margin:0;color:#939398;font-size:11px;line-height:1.7;}
@@ -710,7 +708,7 @@ watch([signalStatusFilter, signalSymbolFilter], () => { signalPage.value = 1; })
 
 .trade-table-wrap th {
   position: sticky;
-  z-index: 1;
+  z-index: 2;
   top: 0;
   padding: 13px 14px;
   color: #838383;
@@ -742,7 +740,7 @@ watch([signalStatusFilter, signalSymbolFilter], () => { signalPage.value = 1; })
   transition: background 140ms ease;
 }
 
-.trade-table-wrap tbody tr:hover {
+.trade-table-wrap tbody tr:hover:not(.trade-row--selected) {
   background: rgba(255, 255, 255, .025);
 }
 

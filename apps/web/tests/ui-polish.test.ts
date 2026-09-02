@@ -116,7 +116,25 @@ test("wide Evidence and Activity ledgers are named keyboard-scrollable regions",
   expect(audit).toContain(".audit-table{width:100%;min-width:680px;");
 });
 
-test("mobile trade rows expose a labeled Inspect action in the sticky identity column", async () => {
+test("the trade ledger scrolls every column together beneath one sticky header layer", async () => {
+  const evidence = await source("../src/components/tabs/EvidenceTab.vue");
+  const tableHead = evidence.match(/\.trade-table-wrap thead\{(?<body>[^}]*)\}/)?.groups?.body ?? "";
+  const headerCells = evidence.match(/\.trade-table-wrap th \{(?<body>[^}]*)\}/)?.groups?.body ?? "";
+  const firstColumnRules = [...evidence.matchAll(/(?<selectors>[^{}]*\.trade-table-wrap[^{}]*:first-child[^{}]*)\{(?<body>[^}]*)\}/g)];
+  expect(tableHead).not.toContain("position:sticky");
+  expect(headerCells).toContain("position: sticky");
+  expect(headerCells).toContain("z-index: 2");
+  expect(firstColumnRules.length).toBeGreaterThan(0);
+  for (const rule of firstColumnRules) {
+    const body = rule.groups?.body ?? "";
+    expect(body).not.toContain("position: sticky");
+    expect(body).not.toMatch(/(?:^|;)\s*left:\s*0\s*;/);
+    expect(body).not.toMatch(/(?:^|;)\s*inset-inline-start:\s*0\s*;/);
+  }
+  expect(evidence).toContain(".trade-table-wrap tbody tr:hover:not(.trade-row--selected)");
+});
+
+test("mobile trade rows expose a labeled Inspect action in the identity column", async () => {
   const evidence = await source("../src/components/tabs/EvidenceTab.vue");
   const firstCell = evidence.match(/<td><div class="trade-identity">(?<body>[\s\S]*?)<\/div><\/td>/)?.groups?.body ?? "";
   expect(firstCell).toContain("inspect-button--mobile");
