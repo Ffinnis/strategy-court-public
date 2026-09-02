@@ -41,6 +41,17 @@ test("the mobile indicator catalog never hides its tall primary layout behind a 
   expect(openingTag(indicators, "indicator-layout")).not.toContain("v-motion-reveal");
 });
 
+test("parameter trials keep the clicked square visibly selected and expose its result", async () => {
+  const matrix = await source("../src/components/ParameterMatrix.vue");
+  expect(matrix).toContain(':aria-pressed="isSelected(path, factor)"');
+  expect(matrix).toContain('class="matrix-cell__selected"');
+  expect(matrix).toContain('class="matrix-selection" role="status" aria-live="polite"');
+  expect(matrix).toContain("Selected trial");
+  expect(matrix).toContain('thead th[data-selected="true"]');
+  expect(matrix).toContain('tbody tr[data-selected="true"] > th');
+  expect(matrix).toMatch(/\.matrix-cell\[aria-pressed="true"\][^{]*\{[^}]*box-shadow:/s);
+});
+
 test("indicator relationship and formula errors expose the field that receives focus", async () => {
   const indicators = await source("../src/pages/IndicatorCatalogPage.vue");
   expect(indicators).toContain('parameter.name === "slowPeriod" && macdRelationshipInvalid.value');
