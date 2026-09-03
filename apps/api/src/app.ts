@@ -98,7 +98,7 @@ function corsHeaders(request: Request, allowedOrigins: string[]): Headers {
   const origin = request.headers.get("origin");
   const headers = new Headers({
     "access-control-allow-headers": "content-type, x-actor",
-    "access-control-allow-methods": "GET, POST, OPTIONS",
+    "access-control-allow-methods": "GET, POST, DELETE, OPTIONS",
     "access-control-expose-headers": "content-disposition",
     "access-control-max-age": "86400",
     "access-control-allow-credentials": "true",
@@ -961,6 +961,10 @@ export async function createApp(options: AppOptions = {}): Promise<ApiApp> {
       }
 
       const caseMatch = path.match(/^\/api\/cases\/([^/]+)$/);
+      if (request.method === "DELETE" && caseMatch) {
+        if (!await store.deleteCase(caseMatch[1]!, ownerUserId)) throw new ApiError(404, "case_not_found", "Court case not found");
+        return json({ deleted: true }, 200, headers);
+      }
       if (request.method === "GET" && caseMatch) {
         const context = await store.getCaseContext(caseMatch[1]!, ownerUserId);
         if (!context) throw new ApiError(404, "case_not_found", "Court case not found");

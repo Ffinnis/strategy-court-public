@@ -388,6 +388,28 @@ export class Store {
     return result.rows[0] ? caseFromRow(result.rows[0] as Row) : null;
   }
 
+  async deleteCase(caseId: string, ownerUserId: string): Promise<boolean> {
+    return this.transaction(async (client) => {
+      const owned = await client.query(
+        "SELECT id FROM court_cases WHERE id = $1 AND owner_user_id = $2 FOR UPDATE",
+        [caseId, ownerUserId],
+      );
+      if (!owned.rowCount) return false;
+      const active = await client.query(
+        "SELECT id FROM court_runs WHERE case_id = $1 AND status IN ('queued', 'running') LIMIT 1",
+        [caseId],
+      );
+      if (active.rowCount) throw new ApiError(409, "case_running", "Wait for Court to finish before deleting this case.");
+      await client.query(
+        "DELETE FROM share_tokens WHERE entity_type = 'report' AND entity_id IN (SELECT id FROM court_runs WHERE case_id = $1)",
+        [caseId],
+      );
+      // Case-owned versions, runs, replays, decisions and audit events cascade.
+      await client.query("DELETE FROM court_cases WHERE id = $1 AND owner_user_id = $2", [caseId, ownerUserId]);
+      return true;
+    });
+  }
+
   async getCaseContext(caseId: string, ownerUserId: string): Promise<CaseContext | null> {
     const courtCase = await this.getCase(caseId, ownerUserId);
     if (!courtCase) return null;

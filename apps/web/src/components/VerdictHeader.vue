@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import DeleteCaseButton from "@/components/DeleteCaseButton.vue";
 import { computed } from "vue";
 import { Bot, ChevronDown, Eye, SlidersHorizontal, WandSparkles } from "lucide-vue-next";
 import { useCourtStore } from "@/stores/court";
@@ -104,6 +105,7 @@ function formatDate(value?: string) {
             <span>{{ store.latestRun ? `Run ${store.latestRun.id.slice(0,8)} · ${store.latestRun.status}` : "No run for this version" }}</span>
             <div><button type="button" @click="goToVersionContext('strategy', $event)">Exact rules</button><button v-if="store.variants.length" type="button" @click="goToVersionContext('variants', $event)">Compare with baseline</button></div>
           </div>
+          <DeleteCaseButton />
         </div>
       </details>
     </div>

@@ -76,6 +76,35 @@ async function createConfirmedCase(app: ApiApp) {
 }
 
 describe("Strategy Court API integration", () => {
+  test("deletes an owned case and its records, but rejects active runs and other owners", async () => {
+    const database = await harness.createDatabase();
+    let userId: string | null = "test-user";
+    const app = await harness.app({ resolveSession: async () => userId ? { user: { id: userId, email: "trader@example.test", name: "Trader" } } : null }, database);
+    const { caseId, versionId } = await createConfirmedCase(app);
+    const path = `/api/cases/${caseId}`;
+    userId = null;
+    expect((await request(app, "DELETE", path)).response.status).toBe(401);
+    userId = "another-user";
+    expect((await request(app, "DELETE", path)).response.status).toBe(404);
+    userId = "test-user";
+    expect((await request(app, "GET", path)).response.status).toBe(200);
+    const run = await app.store.createRun(caseId, versionId, "balanced", ENGINE_VERSION, "user", userId);
+    expect((await request(app, "DELETE", path)).response.status).toBe(409);
+    await database.pool.query("UPDATE court_runs SET status = 'completed' WHERE id = $1", [run.id]);
+    const share = await app.store.issueShareToken("report", run.id, userId, "user");
+    expect(share.status).toBe("issued");
+    const deleted = await request(app, "DELETE", path);
+    expect(deleted.response.status).toBe(200);
+    expect(deleted.result.deleted).toBe(true);
+    expect((await request(app, "GET", path)).response.status).toBe(404);
+    expect((await request(app, "DELETE", path)).response.status).toBe(404);
+    expect((await request(app, "GET", "/api/cases")).result.cases).toHaveLength(0);
+    for (const table of ["strategy_versions", "court_runs", "replay_sessions", "audit_events", "investigation_decisions"]) {
+      expect((await database.pool.query(`SELECT id FROM ${table} WHERE case_id = $1`, [caseId])).rows).toHaveLength(0);
+    }
+    expect((await database.pool.query("SELECT id FROM share_tokens WHERE entity_id = $1", [run.id])).rows).toHaveLength(0);
+  });
+
   test("paginates adjusted Alpaca daily bars and records the request", async () => {
     const urls: URL[] = [];
     const pages = [
